@@ -2,6 +2,10 @@
 
 Research and notes on AI model routers, OpenRouter, and building a unified multi-model API.
 
+## Design
+
+- [AI Hay Router — Product Specification](./docs/design/product-spec.md)
+
 ## Docs
 
 - [AI Model Routers Research Brief (2026)](./docs/ai-model-routers-2026.md)
