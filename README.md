@@ -9,3 +9,4 @@ Research and notes on AI model routers, OpenRouter, and building a unified multi
 - [OpenRouter Deep Overview (2026)](./docs/openrouter-overview-2026.md)
 - [Router vs Gateway](./docs/router-vs-gateway.md)
 - [TypeScript Performance for an AI Model Router](./docs/typescript-performance-ai-router.md)
+- [Language & Technology Comparison](./docs/language-technology-comparison.md)
