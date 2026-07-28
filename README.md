@@ -6,6 +6,10 @@ Research and notes on AI model routers, OpenRouter, and building a unified multi
 
 - [AI Hay Router — Product Specification](./docs/design/product-spec.md)
 
+## Business
+
+- [LLM Reseller Business Model Research](./docs/business/llm-reseller-business-model.md)
+
 ## Docs
 
 - [AI Model Routers Research Brief (2026)](./docs/ai-model-routers-2026.md)
