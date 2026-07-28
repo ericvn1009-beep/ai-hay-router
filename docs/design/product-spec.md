@@ -13,7 +13,7 @@
 
 ## 1. Executive summary
 
-**AI Hay Router** is a **unified multi-model API** that sits between applications and LLM providers. Developers call one OpenAI-compatible endpoint with one API key; Hay routes the request to the right model and provider, handles failover, meters usage, and returns a normalized response (including streaming).
+**AI Hay Router** is a **unified multi-model API** that sits between applications and LLM providers. Developers call one OpenAI-compatible endpoint with one API key; AI Hay routes the request to the right model and provider, handles failover, meters usage, and returns a normalized response (including streaming).
 
 **v1 positioning:** a **gateway with simple routing** (aggregator + reliability + metering), not a research-grade “AI picks the perfect model” system. Smart routing is a later phase.
 
@@ -45,7 +45,7 @@ Existing options force tradeoffs:
 | **Portkey / enterprise gateways** | Deep governance; heavier and more expensive than many startups need |
 | **Direct provider APIs** | Best native features; zero multi-model story |
 
-**Hay** targets teams that want **OpenRouter-like DX** with a path to **own the control plane** (self-host or managed), transparent routing, and a product surface built in TypeScript end-to-end.
+**AI Hay** targets teams that want **OpenRouter-like DX** with a path to **own the control plane** (self-host or managed), transparent routing, and a product surface built in TypeScript end-to-end.
 
 ---
 
@@ -55,7 +55,7 @@ Existing options force tradeoffs:
 
 1. **Unified OpenAI-compatible API** for chat completions (stream + non-stream).
 2. **Multi-provider access** through a single developer API key.
-3. **Model registry** with stable IDs (`provider/model` or Hay aliases).
+3. **Model registry** with stable IDs (`provider/model` or AI Hay aliases).
 4. **Reliability basics:** timeouts, retries, provider failover, optional model fallback list.
 5. **Usage metering:** tokens, estimated cost, latency, which model/provider served the request.
 6. **Developer DX:** drop-in OpenAI SDK via `baseURL`, clear errors, docs, playground-quality examples.
@@ -68,7 +68,7 @@ Existing options force tradeoffs:
 | 100+ providers on day one | Adapter quality over catalog vanity |
 | Learned/auto model router (SOTA) | Needs evals + traffic; Phase 3 |
 | Full enterprise SIEM / complex RBAC | Phase 2+ |
-| Training or hosting foundation models | Hay is orchestration, not a lab |
+| Training or hosting foundation models | AI Hay is orchestration, not a lab |
 | Guaranteed identical quality across hosts of “the same” model | Document variance; allow ignore/only later |
 | Beating Go gateways on µs overhead | Inference latency dominates; architecture first |
 
@@ -126,20 +126,20 @@ Existing options force tradeoffs:
 
 ### 6.1 Category placement
 
-| Layer | Hay v1 | Later |
+| Layer | AI Hay v1 | Later |
 | --- | --- | --- |
 | **Aggregator / unified API** | Yes | Yes |
 | **Gateway (ops)** | Thin: auth, limits, failover, logs | Full: cache, guardrails, budgets UI |
 | **Smart router** | Manual model + simple rules | Auto / classifier / preference models |
 
-Hay is both a **gateway you call** and a **router that chooses provider endpoints** for a given model. See [Router vs Gateway](../router-vs-gateway.md).
+AI Hay is both a **gateway you call** and a **router that chooses provider endpoints** for a given model. See [Router vs Gateway](../router-vs-gateway.md).
 
 ### 6.2 Deployment modes (roadmap)
 
 | Mode | Description | Phase |
 | --- | --- | --- |
-| **Managed cloud** | Hay-hosted API + credits or usage billing | 1–2 |
-| **BYOK** | Customer provider keys; Hay fee for routing/control plane | 2 |
+| **Managed cloud** | AI Hay-hosted API + credits or usage billing | 1–2 |
+| **BYOK** | Customer provider keys; AI Hay fee for routing/control plane | 2 |
 | **Self-host** | Docker / compose in customer VPC | 2–3 |
 
 v1 can start as **self-host MVP** or **single-tenant managed** without full marketplace billing.
@@ -155,8 +155,8 @@ v1 can start as **self-host MVP** or **single-tenant managed** without full mark
 | **Chat Completions API** | `POST /v1/chat/completions` OpenAI-compatible |
 | **Streaming** | SSE (`stream: true`), stream-through proxy |
 | **Models list** | `GET /v1/models` |
-| **API keys** | Bearer `sk-...` issued by Hay |
-| **Model registry** | Config/DB map: Hay model id → provider + upstream id + pricing |
+| **API keys** | Bearer `sk-...` issued by AI Hay |
+| **Model registry** | Config/DB map: AI Hay model id → provider + upstream id + pricing |
 | **≥ 2 provider adapters** | e.g. OpenAI + Anthropic |
 | **Provider failover** | On 5xx / timeout / rate limit, try next endpoint when configured |
 | **Model fallbacks** | Optional `models: []` or config chain |
@@ -173,7 +173,7 @@ v1 can start as **self-host MVP** or **single-tenant managed** without full mark
 | **Credits or Stripe billing** | Prepaid or usage-based |
 | **BYOK** | Customer provider credentials |
 | **Semantic or exact cache** | Optional, workload-dependent |
-| **Virtual models** | `hay/cheap`, `hay/balanced`, `hay/auto` (rules-based first) |
+| **Virtual models** | `aihay/cheap`, `aihay/balanced`, `aihay/auto` (rules-based first) |
 | **Guardrails** | Max tokens, basic blocklists, optional PII hooks |
 | **Third provider** | Gemini and/or Groq / Together |
 | **Organizations** | Workspaces, multiple keys |
@@ -214,24 +214,24 @@ Later: `/v1/embeddings`, `/v1/responses` (if aligning with newer OpenAI shapes),
 import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://api.hay.example/v1",
+  baseURL: "https://api.aihay.example/v1",
   apiKey: process.env.HAY_API_KEY,
 });
 ```
 
-- Hay-specific extensions (provider preferences, fallback arrays) via documented fields or `extra_body`, without breaking standard clients.
+- AI Hay-specific extensions (provider preferences, fallback arrays) via documented fields or `extra_body`, without breaking standard clients.
 
 ### 8.3 Model ID scheme
 
 | Pattern | Example | Notes |
 | --- | --- | --- |
 | Canonical | `openai/gpt-4o-mini` | Clear provider ownership |
-| Alias | `hay/cheap` | Resolved via registry policy |
-| Future auto | `hay/auto` | Phase 3 |
+| Alias | `aihay/cheap` | Resolved via registry policy |
+| Future auto | `aihay/auto` | Phase 3 |
 
 ### 8.4 Auth
 
-- `Authorization: Bearer sk-hay-...`
+- `Authorization: Bearer sk-aihay-...`
 - Keys hashed at rest; show secret only once at creation.
 - Phase 2: key-level limits, workspace scoping.
 
@@ -369,7 +369,7 @@ Decide explicitly before public launch:
 | --- | --- | --- |
 | **Self-host free / OSS core** | Open core gateway; paid cloud optional | 1–2 |
 | **Managed pass-through + fee** | Platform fee on credits (OpenRouter-like) | 2 |
-| **BYOK + control-plane fee** | Customer pays providers; Hay charges platform fee after free tier | 2 |
+| **BYOK + control-plane fee** | Customer pays providers; AI Hay charges platform fee after free tier | 2 |
 | **Subscription** | Flat fee for seats/keys + included volume | 2 |
 
 **v1 recommendation:** instrument metering first; billing can be manual or self-host-only until product-market fit.
@@ -378,7 +378,7 @@ Decide explicitly before public launch:
 
 ## 14. Competitive positioning
 
-| Competitor | Hay differentiates by |
+| Competitor | AI Hay differentiates by |
 | --- | --- |
 | OpenRouter | Ownable control plane; transparent policies; no forced marketplace tax long-term |
 | LiteLLM | TS product stack; stronger productized DX/dashboard path |
@@ -396,14 +396,14 @@ Decide explicitly before public launch:
 
 1. Developer signs up or runs self-host compose.
 2. Creates API key.
-3. Copies 5-line OpenAI SDK snippet with Hay `baseURL`.
-4. Calls `hay`-listed model; receives streamed tokens.
+3. Copies 5-line OpenAI SDK snippet with AI Hay `baseURL`.
+4. Calls `aihay`-listed model; receives streamed tokens.
 5. Sees usage in logs/dashboard (dashboard may be CLI/logs in MVP).
 
 ### 15.2 Failover
 
 1. Primary provider returns 503.
-2. Hay retries alternate provider for same logical model (if configured).
+2. AI Hay retries alternate provider for same logical model (if configured).
 3. Client receives successful completion; usage shows actual provider.
 4. No uncaught 500 if fallback succeeds.
 
@@ -464,7 +464,7 @@ Decide explicitly before public launch:
 | Streaming bugs | End-to-end stream tests; no full buffer |
 | Cost estimation errors | Store raw usage + estimate; reconcile later |
 | Scope creep (100 providers) | Hard cap adapters until MVP metrics green |
-| Security of keys | Hash Hay keys; encrypt provider secrets; rotate |
+| Security of keys | Hash AI Hay keys; encrypt provider secrets; rotate |
 | Competing with OpenRouter on catalog | Compete on ownability, DX, and policy clarity |
 
 ---
@@ -478,7 +478,7 @@ Decide explicitly before public launch:
 | 3 | Hono (edge-ready) vs Fastify (Node-classic)? | Hono / Fastify | Eng |
 | 4 | Brand domain and public API hostname? | TBD | Product |
 | 5 | Open-source license for core? | MIT / Apache / BSL | Product/Legal |
-| 6 | Default model alias set (`hay/cheap` etc.)? | Define in registry | Eng |
+| 6 | Default model alias set (`aihay/cheap` etc.)? | Define in registry | Eng |
 
 ---
 

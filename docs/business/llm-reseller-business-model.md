@@ -78,7 +78,7 @@ Reselling **ChatGPT seats** only works if you are on an **authorized path** (or 
 
 **OpenAI takeaway:**  
 - **Wholesale ChatGPT → cheap multi-tenant API** ≈ **not viable**.  
-- **API inside Hay as your product for end users** ≈ **normal commercial pattern**, if you are not leasing accounts or trading keys.  
+- **API inside AI Hay as your product for end users** ≈ **normal commercial pattern**, if you are not leasing accounts or trading keys.  
 - **Enterprise API commit → lower COGS** ≈ possible via sales; discounts are real but unpublished.  
 - Prefer **Partner Network / co-sell** + **product value** over pure arbitrage narrative.
 
@@ -143,7 +143,7 @@ If the goal is “buy big, resell to SMBs with invoices and support,” **Micros
 
 ### 3.6 Marketplace aggregators (reference economics)
 
-| Player | Model | Lesson for Hay |
+| Player | Model | Lesson for AI Hay |
 | --- | --- | --- |
 | **OpenRouter** | Unified API; stated **pass-through** provider token rates; **~5.5% platform fee** on credit card purchases (minimum fee applies); crypto ~5%; BYOK fees after a free tier | Customers pay for **convenience**, not always “below list.” |
 | **Portkey / gateways** | Control plane fees + observability | Monetize **software**, not token spread alone. |
@@ -204,7 +204,7 @@ SMBs want flexibility; **your** wholesale deal wants **predictable volume**. Tha
 
 ### 5.1 OpenAI (primary rules to design around)
 
-| Rule | Plain English for Hay |
+| Rule | Plain English for AI Hay |
 | --- | --- |
 | Customer Applications for End Users | A real product/gateway with your users is the intended pattern |
 | No resell/lease of Account or End User Account | Don’t rent ChatGPT or API logins |
@@ -235,8 +235,8 @@ SMBs want flexibility; **your** wholesale deal wants **predictable volume**. Tha
 
 ### 5.4 Cleaner patterns
 
-1. **ISV / Customer Application:** End users use *Hay product*; Hay is OpenAI/Google’s customer.  
-2. **BYOK:** SMB uses their own keys; Hay charges software fee (aligns with OpenRouter BYOK).  
+1. **ISV / Customer Application:** End users use *AI Hay product*; AI Hay is OpenAI/Google’s customer.  
+2. **BYOK:** SMB uses their own keys; AI Hay charges software fee (aligns with OpenRouter BYOK).  
 3. **Authorized partner:** CSP / Cloud Partner / OpenAI Partner Network with written channel rights.  
 4. **Cloud marketplace private offer:** Discounted Azure/GCP/AWS AI for named customers.  
 5. **Written order form / amendment** if counsel wants extra certainty for large multi-tenant inference.
@@ -251,7 +251,7 @@ SMBs rarely want “a cheaper raw token pipe” alone. They want:
 | --- | --- |
 | Predictable bills | Credits, hard caps, alerts |
 | Simple start | One key, OpenAI-compatible API |
-| Not locked to one lab | Multi-model (Hay strength) |
+| Not locked to one lab | Multi-model (AI Hay strength) |
 | Someone to call | Support, onboarding |
 | Safety | Rate limits, basic guardrails, key isolation |
 | Invoice / VAT | Especially non-US |
@@ -299,7 +299,7 @@ SMBs rarely want “a cheaper raw token pipe” alone. They want:
 | | |
 | --- | --- |
 | **Buy/resell** | Azure OpenAI / GCP via partner programs |
-| **Sell** | Managed AI stack + Hay router on top |
+| **Sell** | Managed AI stack + AI Hay router on top |
 | **Pros** | Legitimate channel margins; enterprise-ready invoicing |
 | **Cons** | Partner certifications, slower motion, cloud lock-in perception |
 
@@ -314,7 +314,7 @@ SMBs rarely want “a cheaper raw token pipe” alone. They want:
 
 ---
 
-## 8. Strategic recommendation for Hay
+## 8. Strategic recommendation for AI Hay
 
 ### Do
 
@@ -338,7 +338,7 @@ SMBs rarely want “a cheaper raw token pipe” alone. They want:
 
 | Phase | Commercial move |
 | --- | --- |
-| **0–1** | PAYG upstream; sell Hay access (subscription and/or small platform fee); BYOK option |
+| **0–1** | PAYG upstream; sell AI Hay access (subscription and/or small platform fee); BYOK option |
 | **2** | Join **1 cloud partner path** (Azure or GCP) for invoiceable mid-market deals |
 | **2–3** | Negotiate **provider commits** only on models with stable demand; keep multi-provider |
 | **3** | Explore **OpenAI Partner Network** co-sell for larger accounts; private offers |
@@ -394,7 +394,7 @@ SMBs rarely want “a cheaper raw token pipe” alone. They want:
 | Is pure token/key resale a clean business? | **No** — account lease and API key trading are restricted. |
 | Is a multi-model gateway illegal by default? | **Not automatically** — OpenAI contemplates Customer Applications for End Users; design, liability, and acceptable use still matter. |
 | What works? | **Authorized channels + multi-model gateway product + software margin**, with optional volume commits once demand is proven. |
-| Fit for AI Hay Router? | **Strong** — if Hay sells **control plane and unified access**, using wholesale discounts as COGS optimization, not as the whole company story. |
+| Fit for AI Hay Router? | **Strong** — if AI Hay sells **control plane and unified access**, using wholesale discounts as COGS optimization, not as the whole company story. |
 
 **One sentence:**  
 The viable “reseller” model in 2026 is **becoming a trusted multi-model AI access and control layer for SMBs**, using partner programs and volume deals to improve COGS — not smuggling Enterprise ChatGPT into a discount API or trading provider keys.
