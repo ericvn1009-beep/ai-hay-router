@@ -9,6 +9,8 @@ Research and notes on AI model routers, OpenRouter, and building a unified multi
 ## Business
 
 - [LLM Reseller Business Model Research](./docs/business/llm-reseller-business-model.md)
+- [OpenAI Enterprise Deals as COGS](./docs/business/openai-enterprise-cogs-deals.md)
+- [Google Gemini Enterprise Deals as COGS](./docs/business/google-enterprise-cogs-deals.md)
 
 ## Docs
 

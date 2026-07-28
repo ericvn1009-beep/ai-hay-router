@@ -415,6 +415,8 @@ The viable “reseller” model in 2026 is **becoming a trusted multi-model AI a
 
 ## Related docs
 
+- [OpenAI Enterprise Deals as COGS](./openai-enterprise-cogs-deals.md)  
+- [Google Gemini Enterprise Deals as COGS](./google-enterprise-cogs-deals.md)  
 - [AI Hay Router Product Spec](../design/product-spec.md)  
 - [OpenRouter Overview](../openrouter-overview-2026.md)  
 - [How to Build an AI Model Router](../how-to-build-ai-model-router.md)  
