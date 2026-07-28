@@ -215,7 +215,7 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   baseURL: "https://api.aihay.example/v1",
-  apiKey: process.env.HAY_API_KEY,
+  apiKey: process.env.AIHAY_API_KEY,
 });
 ```
 
