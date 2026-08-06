@@ -746,7 +746,9 @@ After V1 DoD:
 | --- | --- |
 | [Product Specification](./product-spec.md) | What / why |
 | [Architecture Design (V1)](./architecture-v1.md) | System structure |
+| [Architecture Design (V2)](./architecture-v2.md) | Productization target |
 | **This plan** | How we execute V1 |
+| [Implementation Plan (V2)](./implementation-plan-v2.md) | How we execute V2 |
 | [How to Build](../how-to-build-ai-model-router.md) | General builder guide |
 | Research under `docs/` | Market context |
 

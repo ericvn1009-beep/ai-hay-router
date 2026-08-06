@@ -542,7 +542,7 @@ Directional; each phase should be shippable.
 | **Architecture V2 (this doc)** | Productization target architecture |
 | [Product Spec](./product-spec.md) | Product scope; update when V2 features lock |
 | [Implementation Plan V1](./implementation-plan-v1.md) | V1 execution (mostly complete) |
-| *Implementation Plan V2* | TBD — break V2.0–V2.7 into tasks |
+| [Implementation Plan V2](./implementation-plan-v2.md) | V2.0–V2.7 tasks, flags, DoD |
 | [Runbook](../runbook.md) | Ops today; extend for metrics/dashboard |
 
 ---
@@ -558,7 +558,7 @@ Directional; each phase should be shippable.
 
 **Smart auto-routing remains V3.**  
 
-Next doc work: **Implementation Plan V2** starting with **V2.0 Observability**, then tenancy and dashboard.
+Next execution: follow **[Implementation Plan V2](./implementation-plan-v2.md)** starting with **V2.0 Observability**, then tenancy and dashboard.
 
 ---
 

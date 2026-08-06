@@ -559,6 +559,7 @@ Decide explicitly before public launch:
 | [Architecture Design (V1)](./architecture-v1.md) | How V1 is structured (pipeline, data, deploy) |
 | [Architecture Design (V2)](./architecture-v2.md) | Productization: tenancy, control plane, observability, commercial |
 | [Implementation Plan (V1)](./implementation-plan-v1.md) | How we execute V1 (phases, tasks, DoD) |
+| [Implementation Plan (V2)](./implementation-plan-v2.md) | How we execute V2 (V2.0–V2.7, flags, DoD) |
 | [How to Build](../how-to-build-ai-model-router.md) | Engineering start guide |
 | [Router vs Gateway](../router-vs-gateway.md) | Concept clarity |
 | [Language comparison](../language-technology-comparison.md) | Why TypeScript |
