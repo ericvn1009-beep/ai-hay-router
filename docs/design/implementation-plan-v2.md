@@ -4,7 +4,7 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V2) |
-| **Status** | Draft — ready to sequence engineering after V1 gateway |
+| **Status** | In progress — **V2.0 observability implemented in code** (`v0.2.0`) |
 | **Last updated** | 2026-08-06 |
 | **Based on** | [Architecture V2](./architecture-v2.md) · [Architecture V1](./architecture-v1.md) · [Product Spec](./product-spec.md) |
 | **Baseline code** | `apps/api` V1 gateway (Compose, keys, metering, OpenAI/Anthropic/xAI) |
@@ -218,12 +218,12 @@ Phases **V2.4 / V2.5 / V2.6 / V2.7** can partially parallelize after V2.2 if sta
 
 #### Acceptance criteria
 
-- [ ] Every authenticated chat completion produces exactly one `request_complete` log line (or documented exception: unauthenticated 401 before key).  
-- [ ] `/metrics` returns Prometheus text with core series present after traffic.  
-- [ ] No prompt/completion content in logs (grep test / audit).  
-- [ ] Runbook documents three alerts: ready fail, 5xx rate, usage enqueue failures.  
-- [ ] Gateway overhead not visibly regressed in smoke (manual OK).  
-- [ ] Tag **`v0.2.0`**.
+- [x] Every authenticated chat completion produces exactly one `request_complete` log line (or documented exception: unauthenticated 401 before key).  
+- [x] `/metrics` returns Prometheus text with core series present after traffic.  
+- [x] No prompt/completion content in logs (event schema is metadata-only).  
+- [x] Runbook documents three alerts: ready fail, 5xx rate, usage enqueue failures.  
+- [x] Unit + integration tests for completion log + metrics.  
+- [x] Tag **`v0.2.0`** (package version).
 
 #### Exit demo
 

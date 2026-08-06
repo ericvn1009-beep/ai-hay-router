@@ -4,17 +4,21 @@ import { loadConfig } from "./config.js";
 import { createMemoryStores } from "./db/memory-store.js";
 import { createLogger } from "./lib/logger.js";
 import { createMemoryRateLimiter } from "./lib/rate-limit.js";
+import { createMetrics, resetMetricsForTests } from "./observability/metrics.js";
 import { loadRegistryFromYaml } from "./registry/load.js";
 
-function testApp() {
+function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
+  resetMetricsForTests();
   const config = loadConfig({
     AIHAY_DEV_KEY: "sk-aihay-dev-local",
     AIHAY_KEY_PEPPER: "test",
     DEFAULT_MAX_TOKENS: "100",
     DEFAULT_RPM: "1000",
     STORE_DRIVER: "memory",
+    FEATURE_METRICS: flags?.metrics === false ? "false" : "true",
+    FEATURE_COMPLETION_LOGS: flags?.completionLogs === false ? "false" : "true",
   } as unknown as NodeJS.ProcessEnv);
-  // fix coerce
+
   const cfg = {
     ...config,
     DEFAULT_MAX_TOKENS: 100,
@@ -31,8 +35,14 @@ function testApp() {
     STORE_DRIVER: "memory" as const,
     AIHAY_DEV_KEY: "sk-aihay-dev-local",
     AIHAY_KEY_PEPPER: "test",
+    SERVICE_NAME: "aihay-api-test",
+    INSTANCE_ID: "test-instance",
+    FEATURE_COMPLETION_LOGS: flags?.completionLogs !== false,
+    FEATURE_METRICS: flags?.metrics !== false,
+    FEATURE_OTEL: false,
   };
   const mem = createMemoryStores(cfg.AIHAY_KEY_PEPPER);
+  const metrics = cfg.FEATURE_METRICS ? createMetrics("aihay-api-test") : null;
   const app = createApp({
     config: cfg,
     registry: loadRegistryFromYaml(),
@@ -40,8 +50,9 @@ function testApp() {
     keys: mem.keys,
     usage: mem.usage,
     rateLimiter: createMemoryRateLimiter(),
+    metrics,
   });
-  return { app, mem, cfg };
+  return { app, mem, cfg, metrics };
 }
 
 describe("app integration", () => {
@@ -61,8 +72,23 @@ describe("app integration", () => {
     expect(body.data.length).toBeGreaterThan(0);
   });
 
-  it("rejects tools and records usage on error path readiness", async () => {
-    const { app, mem } = testApp();
+  it("exposes prometheus metrics when enabled", async () => {
+    const { app } = testApp({ metrics: true });
+    const res = await app.request("/metrics");
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("aihay_http_requests_total");
+    expect(text).toContain("aihay_usage_enqueue_failures_total");
+  });
+
+  it("returns 404 for metrics when disabled", async () => {
+    const { app } = testApp({ metrics: false });
+    const res = await app.request("/metrics");
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects tools and records request_complete metrics", async () => {
+    const { app, mem, metrics } = testApp({ metrics: true });
     const res = await app.request("/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -76,9 +102,28 @@ describe("app integration", () => {
       }),
     });
     expect(res.status).toBe(400);
-    // usage may be 0 because validation throws before enqueue for tools... actually validation throws in route before try usage on tools - check
-    // tools throw from validate before try/catch usage for non-stream - looking at code: validate is before try for stream/nonstream, so no usage on validation error. OK.
+    // validation fails before usage ledger write
     expect(mem.usageEvents.length).toBe(0);
+    const text = await metrics!.registry.metrics();
+    expect(text).toMatch(/aihay_http_requests_total\{.*status="400"/);
+  });
+
+  it("emits metrics after failed chat (missing provider key)", async () => {
+    const { app, metrics } = testApp({ metrics: true });
+    const res = await app.request("/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer sk-aihay-dev-local",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-4o-mini",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    });
+    expect(res.status).toBe(502);
+    const text = await metrics!.registry.metrics();
+    expect(text).toMatch(/aihay_http_requests_total\{.*status="502"/);
   });
 
   it("rejects vision content arrays", async () => {

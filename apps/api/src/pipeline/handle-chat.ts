@@ -1,6 +1,7 @@
 import type { AppConfig } from "../config.js";
 import { openaiError } from "../lib/errors.js";
 import type { Logger } from "../lib/logger.js";
+import type { Metrics } from "../observability/metrics.js";
 import { createAnthropicAdapter } from "../providers/anthropic/index.js";
 import { createOpenAIAdapter } from "../providers/openai/index.js";
 import { createXaiAdapter } from "../providers/xai/index.js";
@@ -26,6 +27,15 @@ export interface HandleChatDeps {
   logger: Logger;
   requestId: string;
   signal?: AbortSignal;
+  metrics?: Metrics | null;
+}
+
+function recordAttempt(
+  metrics: Metrics | null | undefined,
+  provider: string,
+  result: "success" | "error" | "retriable" | "missing_credential",
+) {
+  metrics?.upstreamAttemptsTotal.inc({ provider, result });
 }
 
 export interface HandleChatResultNonStream {
@@ -73,6 +83,7 @@ export async function handleChatNonStream(
     const apiKey = credentialFor(attempt.credentialRef, deps.config);
     if (!apiKey) {
       lastError = `Missing credential ${attempt.credentialRef}`;
+      recordAttempt(deps.metrics, attempt.provider, "missing_credential");
       deps.logger.warn("skip_attempt_missing_credential", {
         request_id: deps.requestId,
         attempt: attempt.n,
@@ -97,6 +108,7 @@ export async function handleChatNonStream(
         timeoutMs: deps.config.REQUEST_TIMEOUT_MS,
         signal: deps.signal,
       });
+      recordAttempt(deps.metrics, result.provider, "success");
       deps.logger.info("chat_success", {
         request_id: deps.requestId,
         model: result.modelUsed,
@@ -119,6 +131,11 @@ export async function handleChatNonStream(
         ? (adapter.classifyError(pe) as ReturnType<ChatAdapter["classifyError"]>)
         : "retriable";
       lastError = pe?.message ?? (e instanceof Error ? e.message : "unknown error");
+      recordAttempt(
+        deps.metrics,
+        attempt.provider,
+        pe && !isRetriable(cls) ? "error" : "retriable",
+      );
       deps.logger.warn("chat_attempt_failed", {
         request_id: deps.requestId,
         attempt: attempt.n,
@@ -172,6 +189,7 @@ export async function handleChatStream(
     const apiKey = credentialFor(attempt.credentialRef, deps.config);
     if (!apiKey) {
       lastError = `Missing credential ${attempt.credentialRef}`;
+      recordAttempt(deps.metrics, attempt.provider, "missing_credential");
       continue;
     }
     const adapter = adapterFor(attempt.provider, apiKey, attempt.baseUrl);
@@ -191,6 +209,7 @@ export async function handleChatStream(
         signal: deps.signal,
       });
       // Success opening upstream stream → commit (no more failover)
+      recordAttempt(deps.metrics, result.provider, "success");
       deps.logger.info("chat_stream_committed", {
         request_id: deps.requestId,
         model: result.modelUsed,
@@ -209,6 +228,11 @@ export async function handleChatStream(
       const pe = getProviderError(e) as ProviderError | undefined;
       const cls = pe ? adapter.classifyError(pe) : "retriable";
       lastError = pe?.message ?? (e instanceof Error ? e.message : "unknown error");
+      recordAttempt(
+        deps.metrics,
+        attempt.provider,
+        pe && !isRetriable(cls) ? "error" : "retriable",
+      );
       deps.logger.warn("chat_stream_attempt_failed", {
         request_id: deps.requestId,
         attempt: attempt.n,

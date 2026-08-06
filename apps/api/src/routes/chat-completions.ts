@@ -2,12 +2,21 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { AppConfig } from "../config.js";
 import type { UsageStore } from "../db/types.js";
+import { AppError } from "../lib/errors.js";
 import type { Logger } from "../lib/logger.js";
 import type { RateLimiter } from "../lib/rate-limit.js";
 import { buildUsageEvent, enqueueUsage } from "../metering/usage.js";
+import type { Metrics } from "../observability/metrics.js";
+import {
+  logRequestComplete,
+  recordRequestCompleteMetrics,
+  type RequestCompleteEvent,
+} from "../observability/request-complete.js";
 import { handleChatNonStream, handleChatStream } from "../pipeline/handle-chat.js";
 import type { ModelRecord } from "../registry/types.js";
 import { validateAndNormalizeChat } from "./schemas.js";
+
+const ROUTE = "/v1/chat/completions";
 
 export function chatRoutes(opts: {
   config: AppConfig;
@@ -15,14 +24,65 @@ export function chatRoutes(opts: {
   logger: Logger;
   usage: UsageStore;
   rateLimiter: RateLimiter;
+  metrics: Metrics | null;
 }) {
   const r = new Hono();
 
   r.post("/v1/chat/completions", async (c) => {
     const requestId = c.get("requestId");
     const apiKey = c.get("apiKey");
+    const startedAt = Date.now();
     const body = await c.req.json();
-    const input = validateAndNormalizeChat(body, opts.config.DEFAULT_MAX_TOKENS);
+
+    const emitComplete = (
+      partial: Omit<
+        RequestCompleteEvent,
+        "request_id" | "workspace_id" | "api_key_id" | "route" | "credential_mode"
+      >,
+    ) => {
+      const event: RequestCompleteEvent = {
+        request_id: requestId,
+        workspace_id: apiKey.workspaceId,
+        api_key_id: apiKey.id,
+        route: ROUTE,
+        credential_mode: "platform",
+        ...partial,
+      };
+      logRequestComplete(opts.logger, opts.config.FEATURE_COMPLETION_LOGS, event);
+      recordRequestCompleteMetrics(opts.metrics, event);
+    };
+
+    let input;
+    try {
+      input = validateAndNormalizeChat(body, opts.config.DEFAULT_MAX_TOKENS);
+    } catch (e) {
+      const errorCode =
+        e instanceof AppError ? (e.code ?? e.message.slice(0, 120)) : "invalid_request";
+      const httpStatus = e instanceof AppError ? Number(e.status) : 400;
+      emitComplete({
+        stream: Boolean((body as { stream?: boolean })?.stream),
+        model_requested:
+          typeof (body as { model?: string })?.model === "string"
+            ? (body as { model: string }).model
+            : "unknown",
+        model_used:
+          typeof (body as { model?: string })?.model === "string"
+            ? (body as { model: string }).model
+            : "unknown",
+        provider: "none",
+        status: "error",
+        http_status: httpStatus,
+        latency_ms: Date.now() - startedAt,
+        ttft_ms: null,
+        attempt_count: 0,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        cost_usd_estimate: 0,
+        error_code: errorCode,
+      });
+      throw e;
+    }
+
     const signal = c.req.raw.signal;
     const modelRecord = opts.registry.get(input.model);
 
@@ -35,30 +95,45 @@ export function chatRoutes(opts: {
           logger: opts.logger,
           requestId,
           signal,
+          metrics: opts.metrics,
         });
       } catch (e) {
-        enqueueUsage(
-          opts.usage,
-          buildUsageEvent({
-            requestId,
-            apiKeyId: apiKey.id,
-            workspaceId: apiKey.workspaceId,
-            modelRequested: input.model,
-            modelUsed: input.model,
-            provider: "none",
-            endpointId: null,
-            promptTokens: 0,
-            completionTokens: 0,
-            usageEstimated: true,
-            latencyMs: 0,
-            ttftMs: null,
-            status: "error",
-            errorCode: e instanceof Error ? e.message.slice(0, 120) : "error",
-            attemptCount: 0,
-            modelRecord,
-          }),
-          opts.logger,
-        );
+        const errorCode = e instanceof Error ? e.message.slice(0, 120) : "error";
+        const httpStatus = e instanceof AppError ? Number(e.status) : 502;
+        const usage = buildUsageEvent({
+          requestId,
+          apiKeyId: apiKey.id,
+          workspaceId: apiKey.workspaceId,
+          modelRequested: input.model,
+          modelUsed: input.model,
+          provider: "none",
+          endpointId: null,
+          promptTokens: 0,
+          completionTokens: 0,
+          usageEstimated: true,
+          latencyMs: Date.now() - startedAt,
+          ttftMs: null,
+          status: "error",
+          errorCode,
+          attemptCount: 0,
+          modelRecord,
+        });
+        enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
+        emitComplete({
+          stream: true,
+          model_requested: input.model,
+          model_used: input.model,
+          provider: "none",
+          status: "error",
+          http_status: httpStatus,
+          latency_ms: usage.latencyMs,
+          ttft_ms: null,
+          attempt_count: 0,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          cost_usd_estimate: usage.costUsdEstimate,
+          error_code: errorCode,
+        });
         throw e;
       }
 
@@ -75,6 +150,7 @@ export function chatRoutes(opts: {
         let ttftMs: number | null = null;
         let status: "success" | "error" | "aborted" = "success";
         let errorCode: string | null = null;
+        let httpStatus = 200;
 
         try {
           for await (const chunk of result.stream) {
@@ -89,6 +165,7 @@ export function chatRoutes(opts: {
           await stream.writeSSE({ data: "[DONE]" });
         } catch (e) {
           status = signal.aborted ? "aborted" : "error";
+          httpStatus = signal.aborted ? 499 : 500;
           errorCode = e instanceof Error ? e.message.slice(0, 120) : "stream_error";
           opts.logger.error("stream_proxy_error", {
             request_id: requestId,
@@ -113,28 +190,41 @@ export function chatRoutes(opts: {
           if (totalTokens > 0) {
             void opts.rateLimiter.addDailyTokens(apiKey.id, totalTokens);
           }
-          enqueueUsage(
-            opts.usage,
-            buildUsageEvent({
-              requestId,
-              apiKeyId: apiKey.id,
-              workspaceId: apiKey.workspaceId,
-              modelRequested: input.model,
-              modelUsed: result.modelUsed,
-              provider: result.provider,
-              endpointId: result.endpointId,
-              promptTokens,
-              completionTokens,
-              usageEstimated,
-              latencyMs: Date.now() - result.startedAt,
-              ttftMs,
-              status,
-              errorCode,
-              attemptCount: result.attemptCount,
-              modelRecord: usedModel,
-            }),
-            opts.logger,
-          );
+          const latencyMs = Date.now() - result.startedAt;
+          const usage = buildUsageEvent({
+            requestId,
+            apiKeyId: apiKey.id,
+            workspaceId: apiKey.workspaceId,
+            modelRequested: input.model,
+            modelUsed: result.modelUsed,
+            provider: result.provider,
+            endpointId: result.endpointId,
+            promptTokens,
+            completionTokens,
+            usageEstimated,
+            latencyMs,
+            ttftMs,
+            status,
+            errorCode,
+            attemptCount: result.attemptCount,
+            modelRecord: usedModel,
+          });
+          enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
+          emitComplete({
+            stream: true,
+            model_requested: input.model,
+            model_used: result.modelUsed,
+            provider: result.provider,
+            status,
+            http_status: httpStatus,
+            latency_ms: latencyMs,
+            ttft_ms: ttftMs,
+            attempt_count: result.attemptCount,
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            cost_usd_estimate: usage.costUsdEstimate,
+            error_code: errorCode,
+          });
         }
       });
     }
@@ -146,6 +236,7 @@ export function chatRoutes(opts: {
         logger: opts.logger,
         requestId,
         signal,
+        metrics: opts.metrics,
       });
 
       const promptTokens = result.completion.usage?.prompt_tokens ?? 0;
@@ -154,28 +245,40 @@ export function chatRoutes(opts: {
       const usedModel = opts.registry.get(result.modelUsed) ?? modelRecord;
 
       void opts.rateLimiter.addDailyTokens(apiKey.id, promptTokens + completionTokens);
-      enqueueUsage(
-        opts.usage,
-        buildUsageEvent({
-          requestId,
-          apiKeyId: apiKey.id,
-          workspaceId: apiKey.workspaceId,
-          modelRequested: input.model,
-          modelUsed: result.modelUsed,
-          provider: result.provider,
-          endpointId: result.endpointId,
-          promptTokens,
-          completionTokens,
-          usageEstimated,
-          latencyMs: result.latencyMs,
-          ttftMs: null,
-          status: "success",
-          errorCode: null,
-          attemptCount: result.attemptCount,
-          modelRecord: usedModel,
-        }),
-        opts.logger,
-      );
+      const usage = buildUsageEvent({
+        requestId,
+        apiKeyId: apiKey.id,
+        workspaceId: apiKey.workspaceId,
+        modelRequested: input.model,
+        modelUsed: result.modelUsed,
+        provider: result.provider,
+        endpointId: result.endpointId,
+        promptTokens,
+        completionTokens,
+        usageEstimated,
+        latencyMs: result.latencyMs,
+        ttftMs: null,
+        status: "success",
+        errorCode: null,
+        attemptCount: result.attemptCount,
+        modelRecord: usedModel,
+      });
+      enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
+      emitComplete({
+        stream: false,
+        model_requested: input.model,
+        model_used: result.modelUsed,
+        provider: result.provider,
+        status: "success",
+        http_status: 200,
+        latency_ms: result.latencyMs,
+        ttft_ms: null,
+        attempt_count: result.attemptCount,
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        cost_usd_estimate: usage.costUsdEstimate,
+        error_code: null,
+      });
 
       c.header("x-aihay-model", result.modelUsed);
       c.header("x-aihay-provider", result.provider);
@@ -183,28 +286,42 @@ export function chatRoutes(opts: {
 
       return c.json(result.completion);
     } catch (e) {
-      enqueueUsage(
-        opts.usage,
-        buildUsageEvent({
-          requestId,
-          apiKeyId: apiKey.id,
-          workspaceId: apiKey.workspaceId,
-          modelRequested: input.model,
-          modelUsed: input.model,
-          provider: "none",
-          endpointId: null,
-          promptTokens: 0,
-          completionTokens: 0,
-          usageEstimated: true,
-          latencyMs: 0,
-          ttftMs: null,
-          status: "error",
-          errorCode: e instanceof Error ? e.message.slice(0, 120) : "error",
-          attemptCount: 0,
-          modelRecord,
-        }),
-        opts.logger,
-      );
+      const errorCode = e instanceof Error ? e.message.slice(0, 120) : "error";
+      const httpStatus = e instanceof AppError ? Number(e.status) : 502;
+      const usage = buildUsageEvent({
+        requestId,
+        apiKeyId: apiKey.id,
+        workspaceId: apiKey.workspaceId,
+        modelRequested: input.model,
+        modelUsed: input.model,
+        provider: "none",
+        endpointId: null,
+        promptTokens: 0,
+        completionTokens: 0,
+        usageEstimated: true,
+        latencyMs: Date.now() - startedAt,
+        ttftMs: null,
+        status: "error",
+        errorCode,
+        attemptCount: 0,
+        modelRecord,
+      });
+      enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
+      emitComplete({
+        stream: false,
+        model_requested: input.model,
+        model_used: input.model,
+        provider: "none",
+        status: "error",
+        http_status: httpStatus,
+        latency_ms: usage.latencyMs,
+        ttft_ms: null,
+        attempt_count: 0,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        cost_usd_estimate: usage.costUsdEstimate,
+        error_code: errorCode,
+      });
       throw e;
     }
   });

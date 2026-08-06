@@ -9,11 +9,9 @@ One API key → **OpenAI + Anthropic (Claude) + xAI (Grok)**, streaming, model f
 | Phase | Status |
 | --- | --- |
 | 0 Spike adapters | Done |
-| 1a Wire API + stream | Done |
-| 1b Keys, usage, limits | Done (memory or Postgres/Redis) |
-| 1c Failover / fallback | Done |
-| 1d Docker + smoke | Done |
-| Tag | `0.1.0` (pre-release code) |
+| 1a–1d V1 gateway | Done |
+| **V2.0 Observability** | **Done** — `request_complete` logs + `GET /metrics` |
+| Tag | `0.2.0` |
 
 ## Quickstart (memory mode — no Docker DB)
 

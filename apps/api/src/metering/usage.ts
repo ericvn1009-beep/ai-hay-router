@@ -1,5 +1,6 @@
 import type { Logger } from "../lib/logger.js";
 import type { UsageEventInput, UsageStore } from "../db/types.js";
+import type { Metrics } from "../observability/metrics.js";
 import { estimateCostUsd } from "./cost.js";
 import type { ModelRecord } from "../registry/types.js";
 
@@ -50,8 +51,10 @@ export function enqueueUsage(
   store: UsageStore,
   event: UsageEventInput,
   logger: Logger,
+  metrics?: Metrics | null,
 ): void {
   void store.insert(event).catch((e) => {
+    metrics?.usageEnqueueFailuresTotal.inc();
     logger.error("usage_insert_failed", {
       request_id: event.requestId,
       message: e instanceof Error ? e.message : String(e),

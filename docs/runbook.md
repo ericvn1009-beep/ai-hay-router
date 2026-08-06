@@ -222,10 +222,13 @@ curl -s http://localhost:3000/v1/models \
 | --- | --- | --- | --- |
 | `GET` | `/health` | No | Liveness |
 | `GET` | `/ready` | No | Readiness (DB ping if Postgres) |
+| `GET` | `/metrics` | No | Prometheus text (V2.0; disable with `FEATURE_METRICS=false`) |
 | `GET` | `/v1/models` | Yes | Model list |
 | `POST` | `/v1/chat/completions` | Yes | Chat (stream / non-stream) |
 
 Useful response headers: `x-request-id`, `x-aihay-model`, `x-aihay-provider`.
+
+**Network note:** Protect `/metrics` at the edge (not public internet) in production.
 
 ---
 
@@ -240,19 +243,57 @@ Useful response headers: `x-request-id`, `x-aihay-model`, `x-aihay-provider`.
 
 ### 9.2 Logs
 
-Structured JSON to stdout:
+Structured JSON to stdout. Base fields on every line: `service`, `instance_id`, `level`, `msg`, `time`.
 
 | `msg` | Meaning |
 | --- | --- |
 | `aihay_starting` / `aihay_listening` | Boot |
 | `store_memory` / `store_postgres` | Persistence mode |
-| `chat_success` / `chat_stream_committed` | Happy path |
+| **`request_complete`** | **V2.0 — one line per terminal chat request** (no prompts) |
+| `chat_success` / `chat_stream_committed` | Happy path internals |
 | `chat_attempt_failed` / `chat_stream_attempt_failed` | Upstream attempt failed (may failover) |
 | `request_error` | Client-facing AppError |
 | `usage_insert_failed` | Metering write failed (request may still have succeeded) |
 | `redis_unavailable_using_memory_limiter` | Redis down; local RPM only |
 
-Always filter by `request_id` when debugging a single call.
+**`request_complete` fields (metadata only):**  
+`request_id`, `workspace_id`, `api_key_id`, `route`, `stream`, `model_requested`, `model_used`, `provider`, `status`, `http_status`, `latency_ms`, `ttft_ms`, `attempt_count`, `prompt_tokens`, `completion_tokens`, `cost_usd_estimate`, `credential_mode`, `error_code`.
+
+```bash
+docker compose logs api 2>&1 | grep request_complete
+docker compose logs api 2>&1 | grep '<request-id>'
+```
+
+Always filter by `request_id` when debugging a single call. Disable completion logs: `FEATURE_COMPLETION_LOGS=false`.
+
+### 9.2.1 Metrics (V2.0)
+
+```bash
+curl -s http://localhost:3000/metrics | head -50
+```
+
+| Series | Meaning |
+| --- | --- |
+| `aihay_http_requests_total{route,status}` | Completed instrumented requests |
+| `aihay_request_duration_ms` | Latency histogram |
+| `aihay_upstream_attempts_total{provider,result}` | success / retriable / error / missing_credential |
+| `aihay_ttft_ms{provider}` | Stream time-to-first-token |
+| `aihay_tokens_total{direction,provider}` | prompt / completion |
+| `aihay_cost_usd_total` | Sum of estimates |
+| `aihay_usage_enqueue_failures_total` | Ledger write failures |
+
+Plus process defaults from `prom-client` (`process_*`, etc.).
+
+Disable: `FEATURE_METRICS=false` → `/metrics` returns 404.
+
+### 9.2.2 Suggested alerts
+
+| Alert | Condition |
+| --- | --- |
+| API down | `/ready` failing |
+| High error rate | rise in `aihay_http_requests_total` with `status=~5..` |
+| Metering hole | `rate(aihay_usage_enqueue_failures_total[5m]) > 0` sustained |
+| Upstream pain | high `aihay_upstream_attempts_total{result="error\|retriable"}` |
 
 ### 9.3 Usage / metering
 
