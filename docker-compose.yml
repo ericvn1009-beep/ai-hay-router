@@ -17,6 +17,14 @@ services:
       FEATURE_CONTROL_PLANE: ${FEATURE_CONTROL_PLANE:-true}
       FEATURE_METRICS: ${FEATURE_METRICS:-true}
       FEATURE_COMPLETION_LOGS: ${FEATURE_COMPLETION_LOGS:-true}
+      FEATURE_ALIASES: ${FEATURE_ALIASES:-true}
+      FEATURE_BUDGETS: ${FEATURE_BUDGETS:-true}
+      FEATURE_BYOK: ${FEATURE_BYOK:-false}
+      BYOK_MASTER_KEY: ${BYOK_MASTER_KEY:-}
+      FEATURE_CREDITS: ${FEATURE_CREDITS:-false}
+      CREDITS_BYOK_BYPASS: ${CREDITS_BYOK_BYPASS:-true}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      FEATURE_TOOLS_VISION: ${FEATURE_TOOLS_VISION:-false}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       XAI_API_KEY: ${XAI_API_KEY:-}
@@ -28,7 +36,7 @@ services:
       redis:
         condition: service_started
 
-  # Dashboard (V2.3) — enable with: docker compose --profile full up -d
+  # Dashboard — enable with: docker compose --profile full up -d
   web:
     profiles: ["full"]
     build:

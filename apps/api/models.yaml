@@ -1,4 +1,4 @@
-# AI Hay model registry — capability matrix (V2.7)
+# AI Hay model registry — capability matrix
 # FEATURE_TOOLS_VISION must be true to accept tools/vision on the API.
 models:
   - id: openai/gpt-4o-mini

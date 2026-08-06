@@ -1,36 +1,42 @@
-# AI Hay Router — Runbook (V1)
+# AI Hay Router — Runbook
 
 | Field | Value |
 | --- | --- |
 | **Product** | AI Hay Router |
-| **Audience** | Operators and engineers running the gateway |
+| **Version** | `0.7.0` |
+| **Audience** | Operators and engineers |
 | **Last updated** | 2026-08-06 |
-| **Related** | [Architecture](./design/architecture-v1.md) · [Implementation plan](./design/implementation-plan-v1.md) · [README](../README.md) |
+| **Related** | [README](../README.md) · [Architecture](./design/architecture-v2.md) · [`.env.example`](../.env.example) |
 
-Operational guide: how to **start**, **configure**, **issue keys**, **verify health**, **debug failures**, and **recover**. Not a product design doc.
+How to **start**, **configure**, **issue keys**, **operate** the control plane and commercial hooks, **verify health**, **debug**, and **recover**.
 
 ---
 
 ## 1. System overview
 
 ```text
-Client (OpenAI SDK / curl)
+Client (OpenAI SDK / curl / dashboard)
         │  Bearer sk-aihay-…  or  AIHAY_DEV_KEY
+        │  Session cookie (control plane)
         ▼
-┌───────────────────────────────────────┐
-│  AI Hay API (Hono / Node 22)          │
-│  auth · RPM · validate · route        │
-│  adapters · stream · usage enqueue    │
-└───────────┬─────────────┬─────────────┘
-            │             │
-     Postgres/Redis    OpenAI · Anthropic · xAI
-     (optional)        (platform keys in env)
+┌──────────────────────────────────────────────────┐
+│  AI Hay API (Hono / Node 22)  :3000              │
+│  auth · RPM · budgets · credits · aliases        │
+│  BYOK resolve · adapters · stream · usage        │
+│  /control/v1 · /metrics · request_complete logs  │
+└───────────┬──────────────────┬───────────────────┘
+            │                  │
+     Postgres / Redis    OpenAI · Anthropic · xAI
+     (optional)          platform keys and/or BYOK
+
+  apps/web :3001  →  proxies /api/control → API
 ```
 
 | Mode | When to use |
 | --- | --- |
-| **Memory** | Local dev; keys/usage in-process (lost on restart) |
-| **Postgres + Redis** | Durable keys/usage + distributed RPM (Compose / prod-like) |
+| **Memory** | Local dev; state lost on restart |
+| **Postgres + Redis** | Durable keys/usage + multi-instance RPM |
+| **Compose full** | API + dashboard + Postgres + Redis |
 
 ---
 
@@ -38,10 +44,10 @@ Client (OpenAI SDK / curl)
 
 | Requirement | Notes |
 | --- | --- |
-| Node.js **22+** | See `.nvmrc` |
-| **pnpm** | Package manager |
-| Docker (optional) | Compose stack: api + Postgres + Redis |
-| Provider keys (for live chat) | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY` |
+| Node.js **22+** | |
+| **pnpm** | `packageManager` in root `package.json` |
+| Docker (optional) | Compose: api, postgres, redis, optional web |
+| Provider keys | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY` for platform-path chat |
 
 ```bash
 node -v    # >= 22
@@ -50,74 +56,85 @@ pnpm -v
 
 ---
 
-## 3. Configuration reference
-
-Copy and edit:
+## 3. Configuration
 
 ```bash
 cp .env.example .env
 ```
 
+### Core
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3000` | HTTP listen port |
 | `LOG_LEVEL` | `info` | `debug` \| `info` \| `warn` \| `error` |
-| `AIHAY_DEV_KEY` | `sk-aihay-dev-local` | Fixed Bearer key for local/dev (always accepted if matched) |
-| `AIHAY_KEY_PEPPER` | `dev-pepper-change-me` | HMAC pepper for hashing CLI-issued keys — **change in any shared env** |
-| `STORE_DRIVER` | `auto` | `auto` \| `memory` \| `postgres` (`auto` → postgres if `DATABASE_URL` set) |
-| `DATABASE_URL` | — | Postgres connection string |
-| `REDIS_URL` | — | Redis for RPM/daily counters; falls back to in-process limiter |
-| `OPENAI_API_KEY` | — | Platform key for OpenAI models |
-| `ANTHROPIC_API_KEY` | — | Platform key for Claude models |
-| `XAI_API_KEY` | — | Platform key for Grok models |
-| `FEATURE_BYOK` | `false` | Workspace-supplied provider keys (V2.5) |
-| `BYOK_MASTER_KEY` | — | AES master key (base64 32 bytes or 64-char hex). **Required in prod when BYOK on** |
-| `FEATURE_CREDITS` | `false` | Prepaid wallet for platform-path inference (V2.6) |
-| `CREDITS_BYOK_BYPASS` | `true` | Skip wallet when workspace has BYOK for the provider |
-| `STRIPE_WEBHOOK_SECRET` | — | Optional shared secret for credit webhooks |
-| `FEATURE_TOOLS_VISION` | `false` | Allow tools + multimodal content when model supports (V2.7) |
+| `SERVICE_NAME` | `aihay-api` | Log / metrics label |
+| `INSTANCE_ID` | hostname | Instance label |
+| `AIHAY_DEV_KEY` | `sk-aihay-dev-local` | Fixed Bearer for local dev |
+| `AIHAY_KEY_PEPPER` | `dev-pepper-…` | HMAC pepper for API key hashes — **change in shared envs** |
+| `SESSION_SECRET` | `dev-session-…` | Control-plane session signing |
+| `STORE_DRIVER` | `auto` | `auto` \| `memory` \| `postgres` |
+| `DATABASE_URL` | — | Postgres URL |
+| `REDIS_URL` | — | Redis for RPM/daily counters |
+| `OPENAI_API_KEY` | — | Platform OpenAI key |
+| `ANTHROPIC_API_KEY` | — | Platform Anthropic key |
+| `XAI_API_KEY` | — | Platform xAI key |
 | `REQUEST_TIMEOUT_MS` | `120000` | Per-attempt upstream timeout |
-| `DEFAULT_MAX_TOKENS` | `4096` | Default and **clamp** for `max_tokens` |
-| `DEFAULT_RPM` | `60` | Per-key requests/minute if key has no override |
+| `DEFAULT_MAX_TOKENS` | `4096` | Default and clamp for `max_tokens` |
+| `DEFAULT_RPM` | `60` | Per-key RPM if key has no override |
 | `MAX_ATTEMPTS` | `3` | Max failover/fallback attempts |
 
-**Security notes**
+### Feature flags
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `FEATURE_COMPLETION_LOGS` | `true` | `request_complete` log lines |
+| `FEATURE_METRICS` | `true` | Prometheus `GET /metrics` |
+| `FEATURE_OTEL` | `false` | OTel hooks (stub-friendly) |
+| `FEATURE_CONTROL_PLANE` | `true` | `/control/v1/*` session APIs |
+| `FEATURE_ALIASES` | `true` | `aihay/*` virtual models |
+| `FEATURE_BUDGETS` | `true` | Workspace daily hard/soft budgets |
+| `FEATURE_BYOK` | `false` | Workspace provider secrets |
+| `BYOK_MASTER_KEY` | — | AES master key (base64 32 bytes or 64-char hex) |
+| `FEATURE_CREDITS` | `false` | Prepaid wallet |
+| `CREDITS_BYOK_BYPASS` | `true` | Skip wallet when BYOK is configured for provider |
+| `STRIPE_WEBHOOK_SECRET` | — | Shared secret for credit webhooks |
+| `FEATURE_TOOLS_VISION` | `false` | Tools + multimodal content |
+| `AIHAY_API_URL` | — | Dashboard BFF target (web only) |
+
+**Security**
 
 - Never commit `.env`.
-- Rotate `AIHAY_KEY_PEPPER` only with a full key re-issue (hashes become invalid).
-- Provider keys spend **your** money; keep RPM and token caps on.
-- Do not expose `AIHAY_DEV_KEY` on a public internet deployment.
-- **BYOK:** set a dedicated `BYOK_MASTER_KEY` before enabling multi-tenant BYOK; losing it means stored secrets cannot be decrypted (rotate by re-entering customer keys). Never log `api_key` bodies or decrypted material.
+- Rotating `AIHAY_KEY_PEPPER` invalidates all hashed keys (re-issue required).
+- Do not expose `AIHAY_DEV_KEY` on the public internet.
+- **BYOK:** set a dedicated `BYOK_MASTER_KEY` in production; never log secret material. Losing the master key requires customers to re-enter provider keys.
 
 ---
 
-## 4. Local run (memory mode)
-
-Fastest path; no Postgres/Redis required.
+## 4. Local run (memory)
 
 ```bash
 pnpm install
 cp .env.example .env
-# Optional: set OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY
+# optional: OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY
 
-pnpm test          # unit + integration (no live network)
-pnpm dev           # http://localhost:3000
+pnpm test
+pnpm typecheck
+pnpm dev              # http://localhost:3000
+pnpm dev:web          # http://localhost:3001  (separate terminal)
+# or: pnpm dev:full
 ```
 
 **Verify**
 
 ```bash
 curl -s http://localhost:3000/health
-# {"status":"ok"}
-
 curl -s http://localhost:3000/ready
-# {"status":"ready"}
-
 curl -s http://localhost:3000/v1/models \
   -H "Authorization: Bearer sk-aihay-dev-local"
 ```
 
-**Chat (needs provider key)**
+**Chat**
 
 ```bash
 curl -s http://localhost:3000/v1/chat/completions \
@@ -130,7 +147,20 @@ curl -s http://localhost:3000/v1/chat/completions \
   }'
 ```
 
-**Client (OpenAI SDK)**
+**Alias example**
+
+```bash
+curl -s http://localhost:3000/v1/chat/completions \
+  -H "Authorization: Bearer sk-aihay-dev-local" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "aihay/cheap",
+    "messages": [{"role":"user","content":"hi"}],
+    "stream": false
+  }'
+```
+
+**OpenAI SDK**
 
 ```ts
 import OpenAI from "openai";
@@ -141,256 +171,255 @@ const client = new OpenAI({
 });
 ```
 
+**Sample script**
+
+```bash
+export AIHAY_API_KEY=sk-aihay-dev-local   # or a real key
+./sample_test.sh
+```
+
 ---
 
-## 5. Docker Compose (Postgres + Redis)
+## 5. Docker Compose
 
 ```bash
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 export XAI_API_KEY=xai-...
 export AIHAY_KEY_PEPPER=strong-random-value
+export SESSION_SECRET=strong-session-secret
 
-docker compose up --build
-# API :3000  Postgres :5432  Redis :6379
+# API + Postgres + Redis
+docker compose up --build -d
+
+# + dashboard on :3001
+docker compose --profile full up --build -d
 ```
 
-**Create a durable API key** (CLI talks to the same DB as Compose):
+| Service | Port |
+| --- | --- |
+| api | `3000` |
+| web (profile `full`) | `3001` |
+| postgres | `5432` |
+| redis | `6379` |
+
+**Migrations:** applied automatically on API boot with Postgres. Manual:
+
+```bash
+DATABASE_URL=postgres://aihay:aihay@localhost:5432/aihay pnpm migrate
+# applies apps/api/migrations/*.sql (tracked in schema_migrations)
+```
+
+**Durable key (CLI → same DB):**
 
 ```bash
 DATABASE_URL=postgres://aihay:aihay@localhost:5432/aihay \
 STORE_DRIVER=postgres \
 AIHAY_KEY_PEPPER=strong-random-value \
 pnpm keys create --name compose-dev
-# Copy sk-aihay-… once; only the hash is stored
+# Copy sk-aihay-… once
 ```
 
-**Migrate only** (API also runs ordered migrations on boot when using Postgres):
-
 ```bash
-DATABASE_URL=postgres://aihay:aihay@localhost:5432/aihay pnpm migrate
-# applies apps/api/migrations/*.sql once each (tracked in schema_migrations)
-```
-
-### Upgrade V1 → V2.1 (tenancy)
-
-1. Deploy code ≥ `0.2.1` and restart API (or `pnpm migrate` with `DATABASE_URL`).
-2. Migrations `001_v1_base.sql` + `002_v2_tenancy.sql` create orgs/users/memberships and backfill `workspaces.organization_id` + `usage_events.organization_id`.
-3. Existing `sk-aihay-…` keys keep working (same hash table).
-4. Optional multi-workspace via CLI:
-
-```bash
-pnpm keys workspace-create --name team-b
-pnpm keys workspaces
-pnpm keys create --name app --workspace <workspace-uuid>
-pnpm keys list --workspace <workspace-uuid>
-```
-
-Memory store supports multi-workspace for tests/dev; durable multi-workspace needs Postgres.
-
-**Stop**
-
-```bash
+docker compose logs -f api
 docker compose down
-# data volume: docker compose down -v   # destructive
+# docker compose down -v   # destroys DB volume
 ```
 
 ---
 
-## 6. API key management
+## 6. API keys
 
 | Command | Action |
 | --- | --- |
 | `pnpm keys create --name <label>` | Mint key; prints secret **once** |
-| `pnpm keys list` | List prefix, name, revoked flag |
-| `pnpm keys revoke --prefix sk-aihay-xxxx` | Soft-revoke matching keys |
+| `pnpm keys list` | List prefix, name, revoked |
+| `pnpm keys revoke --prefix sk-aihay-xxxx` | Soft-revoke |
+| `pnpm keys workspace-create --name <n>` | Extra workspace (Postgres/memory) |
+| `pnpm keys workspaces` | List workspaces |
 
-**Auth behavior**
+Keys can also be created in the **dashboard** or control API.
+
+**Auth (data plane)**
 
 1. `Authorization: Bearer <token>`
-2. If token equals `AIHAY_DEV_KEY` → accept (dev identity)
-3. Else if `sk-aihay-…` → HMAC-SHA256(token, pepper) → lookup `api_keys`
+2. Matches `AIHAY_DEV_KEY` → accept (dev identity)
+3. Else `sk-aihay-…` → HMAC with pepper → `api_keys` lookup
 4. Revoked / unknown → `401`
-5. Over RPM / daily token limit → `429`
+5. Over RPM / daily tokens → `429`
+6. Hard budget → `429` `budget_exceeded`
+7. Credits empty (platform path) → `402` `insufficient_credits`
 
-Memory-mode keys exist only in that process; use Postgres for anything you care about after restart.
+Memory-mode keys die with the process; use Postgres for durability.
 
 ---
 
 ## 7. Models and providers
 
-Registry seed: `apps/api/models.yaml`.
+Seed: `apps/api/models.yaml`.
 
-| AI Hay model id | Provider | Env credential |
-| --- | --- | --- |
-| `openai/gpt-4o-mini`, `openai/gpt-4o` | OpenAI | `OPENAI_API_KEY` |
-| `anthropic/claude-3-5-haiku-latest`, `anthropic/claude-sonnet-4-0` | Anthropic | `ANTHROPIC_API_KEY` |
-| `xai/grok-4.5`, `xai/grok-3`, `xai/grok-3-mini` | xAI Grok | `XAI_API_KEY` |
+| AI Hay model id | Provider | Credential | tools | vision |
+| --- | --- | --- | --- | --- |
+| `openai/gpt-4o-mini`, `openai/gpt-4o` | OpenAI | `OPENAI_API_KEY` or BYOK | yes | yes |
+| `anthropic/claude-3-5-haiku-latest`, `anthropic/claude-sonnet-4-0` | Anthropic | `ANTHROPIC_API_KEY` or BYOK | yes | yes |
+| `xai/grok-4.5` | xAI | `XAI_API_KEY` or BYOK | yes | yes |
+| `xai/grok-3`, `xai/grok-3-mini` | xAI | `XAI_API_KEY` or BYOK | yes | no |
 
-List active models:
+**Aliases** (`FEATURE_ALIASES=true`): `aihay/cheap`, `aihay/balanced`, `aihay/smart`, `aihay/fast`.
 
 ```bash
 curl -s http://localhost:3000/v1/models \
   -H "Authorization: Bearer $AIHAY_API_KEY"
 ```
 
-**V1 limits:** text chat only. Tools / vision → `400` `unsupported_parameter`.
+**Fallback:** body `models: ["xai/grok-3-mini"]` or `fallback_models` in YAML. Stream failover only **before** first client SSE byte.
 
-**Fallback (optional):** request body `models: ["xai/grok-3-mini"]` or `fallback_models` in YAML. Stream failover only **before** first client SSE byte.
+**Tools / vision:** require `FEATURE_TOOLS_VISION=true` **and** model capability flags. Unsupported combo → `400` `unsupported_parameter`.
 
 ---
 
-## 8. Endpoints
+## 8. HTTP surface
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/health` | No | Liveness |
 | `GET` | `/ready` | No | Readiness (DB ping if Postgres) |
-| `GET` | `/metrics` | No | Prometheus text (V2.0; disable with `FEATURE_METRICS=false`) |
-| `GET` | `/v1/models` | Bearer API key | Model list |
-| `POST` | `/v1/chat/completions` | Bearer API key | Chat (stream / non-stream) |
-| `*` | `/control/v1/*` | Session cookie (V2.2) | Control plane (when `FEATURE_CONTROL_PLANE=true`) |
+| `GET` | `/metrics` | No | Prometheus text |
+| `GET` | `/v1/models` | API key | Model list (+ aliases) |
+| `POST` | `/v1/chat/completions` | API key | Chat (stream / non-stream) |
+| `*` | `/control/v1/*` | Session cookie | Control plane |
 
-### Control plane (V2.2)
+Response headers (chat): `x-request-id`, `x-aihay-model`, `x-aihay-provider`, `x-aihay-credential-mode`.
 
-Human session auth (HTTP-only cookie `aihay_session`). **API keys cannot call `/control/*`.**
+Protect `/metrics` at the edge in production.
+
+---
+
+## 9. Control plane
+
+Session cookie `aihay_session`. **API keys cannot call `/control/*`.** Catalog: `GET /control/v1`.
 
 ```bash
-# register (first user becomes owner of default org/workspace)
+# Register
 curl -s -c cookies.txt -X POST localhost:3000/control/v1/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"password123","name":"You"}'
 
-# create key
-WS=$(jq -r .workspace_id <<<"$(curl -s -b cookies.txt localhost:3000/control/v1/me | jq -r '.workspaces[0].id')")
-# or use workspace_id from register response:
+# Login
+curl -s -c cookies.txt -X POST localhost:3000/control/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"password123"}'
+
+WS=$(curl -s -b cookies.txt localhost:3000/control/v1/me | jq -r '.workspaces[0].id')
+
+# API key
 curl -s -b cookies.txt -X POST "localhost:3000/control/v1/workspaces/$WS/keys" \
   -H 'Content-Type: application/json' \
   -d '{"name":"app"}'
-# → save "secret" once
 
-# use key on data plane
-curl -s localhost:3000/v1/models -H "Authorization: Bearer sk-aihay-..."
+# Usage
+curl -s -b cookies.txt "localhost:3000/control/v1/workspaces/$WS/usage?limit=20"
+curl -s -b cookies.txt "localhost:3000/control/v1/workspaces/$WS/usage/summary"
+
+# Budget
+curl -s -b cookies.txt "localhost:3000/control/v1/workspaces/$WS/budget"
+curl -s -b cookies.txt -X PUT "localhost:3000/control/v1/workspaces/$WS/budget" \
+  -H 'Content-Type: application/json' \
+  -d '{"hard_cost_usd_daily":10,"soft_cost_usd_daily":5}'
 ```
 
-Catalog: `GET /control/v1`. Disable control plane: `FEATURE_CONTROL_PLANE=false`.
+Disable: `FEATURE_CONTROL_PLANE=false`.
 
-### BYOK (V2.5)
-
-Credential resolution: **workspace BYOK → platform env → fail**. Usage + `request_complete` record `credential_mode: platform|byok`.
+### Dashboard
 
 ```bash
-# Enable: FEATURE_BYOK=true and BYOK_MASTER_KEY=<32-byte secret>
+pnpm dev                 # terminal 1
+pnpm dev:web             # terminal 2 → http://localhost:3001
 
-# Put OpenAI key for a workspace (session cookie)
+# Compose
+docker compose --profile full up --build -d
+```
+
+Pages: `/register`, `/login`, `/keys`, `/usage`, `/byok`, `/wallet`.
+
+---
+
+## 10. BYOK
+
+Order: **workspace BYOK → platform env → fail**. Logs/usage record `credential_mode: platform|byok`.
+
+```bash
+# FEATURE_BYOK=true  and  BYOK_MASTER_KEY=<secret>
+
 curl -s -b cookies.txt -X PUT \
   "localhost:3000/control/v1/workspaces/$WS/providers/openai/secret" \
   -H 'Content-Type: application/json' \
   -d '{"api_key":"sk-..."}'
-# → { configured: true, key_hint: "…xxxx" }  — secret never returned
+# → key_hint only; raw secret never returned
 
-# List (status only)
 curl -s -b cookies.txt "localhost:3000/control/v1/workspaces/$WS/providers"
 
-# Delete (falls back to platform keys)
 curl -s -b cookies.txt -X DELETE \
   "localhost:3000/control/v1/workspaces/$WS/providers/openai/secret"
 ```
 
-Dashboard: **BYOK** page at `/byok` (when web is running).
-
-**Ops notes**
-
 | Event | Action |
 | --- | --- |
-| Rotate master key | Generate new `BYOK_MASTER_KEY`; customers must re-save provider keys (old ciphertext unreadable) |
-| Customer key compromise | `DELETE` secret; revoke upstream key at provider |
-| Lost master key | Cannot recover ciphertext; wipe `provider_secrets` and re-onboard |
+| Rotate master key | New `BYOK_MASTER_KEY`; re-save all customer secrets |
+| Customer key leaked | `DELETE` secret; rotate at provider |
+| Lost master key | Ciphertext unrecoverable; wipe `provider_secrets` and re-onboard |
 
-### Credits / wallet (V2.6)
+---
 
-When `FEATURE_CREDITS=true`, platform-path chat requires a positive wallet balance (else **402** `insufficient_credits`). Successful requests debit `cost_usd_estimate` (idempotent on `request_id`). BYOK workspaces skip billing when `CREDITS_BYOK_BYPASS=true` (default).
+## 11. Credits / wallet
+
+With `FEATURE_CREDITS=true`, platform-path chat needs balance &gt; 0 else **402** `insufficient_credits`. Success debits estimated cost (idempotent on `request_id`). BYOK skips billing when `CREDITS_BYOK_BYPASS=true`.
 
 ```bash
-# Manual top-up (admin session)
+curl -s -b cookies.txt "localhost:3000/control/v1/workspaces/$WS/wallet"
+
 curl -s -b cookies.txt -X POST \
   "localhost:3000/control/v1/workspaces/$WS/wallet/credit" \
   -H 'Content-Type: application/json' \
   -d '{"amount_usd":50,"idempotency_key":"promo-1"}'
 
-# Stripe-style webhook (idempotent on event_id)
+# Webhook (idempotent on event_id)
 curl -s -X POST localhost:3000/control/v1/webhooks/credits \
   -H 'Content-Type: application/json' \
   -H "X-Credits-Webhook-Secret: $STRIPE_WEBHOOK_SECRET" \
-  -d '{"event_id":"evt_123","workspace_id":"…","amount_usd":25}'
+  -d "{\"event_id\":\"evt_123\",\"workspace_id\":\"$WS\",\"amount_usd\":25}"
 ```
 
-Dashboard: **Wallet** at `/wallet`. Refunds are out-of-band (manual ledger credit with negative ops process).
-
-### Tools / vision (V2.7)
-
-Requires `FEATURE_TOOLS_VISION=true` **and** model capability flags:
-
-| Model | tools | vision |
-| --- | --- | --- |
-| `openai/gpt-4o`, `gpt-4o-mini` | yes | yes |
-| `anthropic/claude-*` | yes | yes |
-| `xai/grok-4.5` | yes | yes |
-| `xai/grok-3`, `grok-3-mini` | yes | no |
-
-Unsupported combo → **400** `unsupported_parameter`. Text-only clients unchanged when flag is off.
-
-### Dashboard UI (V2.3)
-
-```bash
-# Terminal 1 — API
-pnpm dev
-
-# Terminal 2 — Web (BFF proxies /api/control → AIHAY_API_URL)
-AIHAY_API_URL=http://127.0.0.1:3000 pnpm dev:web
-# → http://localhost:3001
-```
-
-Compose **full** profile:
-
-```bash
-docker compose --profile full up --build -d
-# web on :3001 talks to api:3000 inside the network
-```
-
-Pages: `/register`, `/login`, `/keys` (create/revoke), `/usage` (summary + recent).
-
-Useful response headers: `x-request-id`, `x-aihay-model`, `x-aihay-provider`.
-
-**Network note:** Protect `/metrics` at the edge (not public internet) in production.
+Refunds: out-of-band ops (manual credit / process).
 
 ---
 
-## 9. Day-2 operations
+## 12. Day-2 operations
 
-### 9.1 Health checks (load balancer)
+### Health
 
 | Probe | Path | Expect |
 | --- | --- | --- |
 | Liveness | `GET /health` | `200` |
 | Readiness | `GET /ready` | `200` (not `503`) |
 
-### 9.2 Logs
+### Logs
 
-Structured JSON to stdout. Base fields on every line: `service`, `instance_id`, `level`, `msg`, `time`.
+Structured JSON stdout. Base fields: `service`, `instance_id`, `level`, `msg`, `time`.
 
 | `msg` | Meaning |
 | --- | --- |
 | `aihay_starting` / `aihay_listening` | Boot |
 | `store_memory` / `store_postgres` | Persistence mode |
-| **`request_complete`** | **V2.0 — one line per terminal chat request** (no prompts) |
-| `chat_success` / `chat_stream_committed` | Happy path internals |
-| `chat_attempt_failed` / `chat_stream_attempt_failed` | Upstream attempt failed (may failover) |
-| `request_error` | Client-facing AppError |
-| `usage_insert_failed` | Metering write failed (request may still have succeeded) |
-| `redis_unavailable_using_memory_limiter` | Redis down; local RPM only |
+| **`request_complete`** | One line per terminal chat (no prompts) |
+| `chat_success` / `chat_stream_committed` | Happy path |
+| `chat_attempt_failed` | Upstream attempt failed (may failover) |
+| `budget_soft_warning` | Soft budget exceeded |
+| `usage_insert_failed` | Metering write failed |
+| `credit_debit_failed` | Wallet debit failed after success |
+| `redis_unavailable_using_memory_limiter` | Redis down; in-process RPM |
 
-**`request_complete` fields (metadata only):**  
+**`request_complete` fields:**  
 `request_id`, `workspace_id`, `api_key_id`, `route`, `stream`, `model_requested`, `model_used`, `provider`, `status`, `http_status`, `latency_ms`, `ttft_ms`, `attempt_count`, `prompt_tokens`, `completion_tokens`, `cost_usd_estimate`, `credential_mode`, `error_code`.
 
 ```bash
@@ -398,9 +427,7 @@ docker compose logs api 2>&1 | grep request_complete
 docker compose logs api 2>&1 | grep '<request-id>'
 ```
 
-Always filter by `request_id` when debugging a single call. Disable completion logs: `FEATURE_COMPLETION_LOGS=false`.
-
-### 9.2.1 Metrics (V2.0)
+### Metrics
 
 ```bash
 curl -s http://localhost:3000/metrics | head -50
@@ -408,89 +435,69 @@ curl -s http://localhost:3000/metrics | head -50
 
 | Series | Meaning |
 | --- | --- |
-| `aihay_http_requests_total{route,status}` | Completed instrumented requests |
+| `aihay_http_requests_total{route,status}` | Requests |
 | `aihay_request_duration_ms` | Latency histogram |
 | `aihay_upstream_attempts_total{provider,result}` | success / retriable / error / missing_credential |
-| `aihay_ttft_ms{provider}` | Stream time-to-first-token |
+| `aihay_ttft_ms{provider}` | Stream TTFT |
 | `aihay_tokens_total{direction,provider}` | prompt / completion |
-| `aihay_cost_usd_total` | Sum of estimates |
+| `aihay_cost_usd_total` | Cost estimates sum |
 | `aihay_usage_enqueue_failures_total` | Ledger write failures |
 
-Plus process defaults from `prom-client` (`process_*`, etc.).
-
-Disable: `FEATURE_METRICS=false` → `/metrics` returns 404.
-
-### 9.2.2 Suggested alerts
+### Suggested alerts
 
 | Alert | Condition |
 | --- | --- |
 | API down | `/ready` failing |
-| High error rate | rise in `aihay_http_requests_total` with `status=~5..` |
-| Metering hole | `rate(aihay_usage_enqueue_failures_total[5m]) > 0` sustained |
-| Upstream pain | high `aihay_upstream_attempts_total{result="error\|retriable"}` |
+| High error rate | `status=~5..` rising |
+| Metering hole | `rate(aihay_usage_enqueue_failures_total[5m]) > 0` |
+| Upstream pain | high `result="error\|retriable"` |
 
-### 9.3 Usage / metering
-
-- One `usage_events` row per **terminal** request (Postgres or memory buffer).
-- Fields include model requested/used, provider, tokens, cost estimate, latency, status, attempt count.
-- Prompts/completions are **not** stored by default.
-
-Inspect (Postgres):
+### Usage SQL (Postgres)
 
 ```sql
-SELECT request_id, model_used, provider, prompt_tokens, completion_tokens,
-       cost_usd_estimate, status, attempt_count, created_at
+SELECT request_id, model_used, provider, credential_mode,
+       prompt_tokens, completion_tokens, cost_usd_estimate,
+       status, attempt_count, created_at
 FROM usage_events
 ORDER BY created_at DESC
 LIMIT 20;
 ```
 
-### 9.4 Smoke script
-
-Against a running server:
+### Smoke / spike
 
 ```bash
-# partial (no live chat unless keys + SMOKE_LIVE)
 pnpm smoke
 
 OPENAI_API_KEY=sk-... SMOKE_LIVE=1 \
   AIHAY_API_KEY=sk-aihay-dev-local \
   SMOKE_BASE_URL=http://127.0.0.1:3000 \
   pnpm smoke
-```
 
-### 9.5 Spike (provider-only debug)
-
-Bypasses the gateway; uses raw provider keys:
-
-```bash
+# Bypasses gateway — raw provider
 pnpm spike:chat --provider openai --model gpt-4o-mini
 pnpm spike:chat --provider anthropic --model claude-3-5-haiku-latest
 pnpm spike:chat --provider xai --model grok-4.5
 ```
 
-Use when isolating adapter vs gateway issues. See spike notes in [implementation plan](./design/implementation-plan-v1.md) Phase 0.
-
 ---
 
-## 10. Troubleshooting
+## 13. Troubleshooting
 
 | Symptom | Likely cause | Action |
 | --- | --- | --- |
-| `401` invalid API key | Wrong Bearer / revoked / pepper mismatch | Check key; list/revoke; ensure same `AIHAY_KEY_PEPPER` as mint time |
-| `400` unknown model | Id not in `models.yaml` | `GET /v1/models`; fix id (`provider/model`) |
-| `400` unsupported_parameter | Tools or vision content | Text-only messages in V1 |
-| `429` rate limit | RPM exceeded | Wait / raise `DEFAULT_RPM` or key rpm |
-| `429` daily_limit_exceeded | Daily token soft cap | Wait until UTC day rolls or raise limit |
-| `502` upstream_unavailable | Missing platform key or all providers failing | Set env keys; check provider status; use spike |
-| Health OK, chat fails | No `OPENAI_API_KEY` / etc. | Boot log shows `*_configured: false` |
-| Stream dies mid-way | Upstream drop after commit | Expected: no mid-stream model switch; check provider |
-| Keys disappear after restart | Memory store | Use Postgres + `STORE_DRIVER=postgres` |
-| `/ready` 503 | Postgres unreachable | Check `DATABASE_URL`, Compose health |
-| Redis log warning | Redis down | Service still runs with memory limiter (not multi-instance safe) |
-| Cost looks wrong | Seed prices illustrative | Update `models.yaml` prices; raw tokens still stored |
+| `401` | Bad/revoked key or pepper mismatch | Check key; same `AIHAY_KEY_PEPPER` as mint |
+| `400` unknown model | Not in registry / alias off | `GET /v1/models`; enable `FEATURE_ALIASES` |
+| `400` unsupported_parameter | Tools/vision off or model lacks capability | Set `FEATURE_TOOLS_VISION` or use text-only |
+| `402` insufficient_credits | Empty wallet on platform path | Credit wallet or enable BYOK bypass |
+| `429` rate limit | RPM | Raise `DEFAULT_RPM` or key rpm |
+| `429` budget_exceeded | Hard budget | Raise budget or wait for day rollover |
+| `429` daily_limit_exceeded | Daily token cap | Raise limit or wait UTC day |
+| `502` upstream_unavailable | Missing keys or all providers down | Set platform/BYOK keys; spike provider |
+| Keys gone after restart | Memory store | Use Postgres |
+| `/ready` 503 | DB down | Check `DATABASE_URL` / Compose |
+| Redis warning | Redis down | Single-node memory limiter only |
 
-**Error body shape (OpenAI-like)**
+**Error body**
 
 ```json
 {
@@ -505,39 +512,35 @@ Use when isolating adapter vs gateway issues. See spike notes in [implementation
 
 ---
 
-## 11. Incident playbooks
+## 14. Incidents
 
-### 11.1 Provider outage (e.g. OpenAI 5xx)
+### Provider outage
 
-1. Confirm with spike or provider status page.
-2. Clients can set `models: ["anthropic/…"]` or `"xai/…"` fallback on requests.
-3. Optionally edit `fallback_models` in `models.yaml` and restart API.
-4. Watch logs for `chat_attempt_failed` → `chat_success` with different `provider`.
+1. Confirm with spike or provider status.
+2. Clients set `models: ["anthropic/…"]` or `"xai/…"` fallback.
+3. Or edit `fallback_models` in `models.yaml` and restart.
+4. Watch `chat_attempt_failed` → success on another `provider`.
 
-### 11.2 Compromised AI Hay key
+### Compromised AI Hay key
 
-1. `pnpm keys revoke --prefix sk-aihay-<prefix>`
+1. `pnpm keys revoke --prefix sk-aihay-<prefix>` (or dashboard revoke).
 2. Mint a new key; update clients.
-3. Review `usage_events` for that `api_key_id` after compromise window.
-4. If platform provider keys may be exposed, rotate those at OpenAI/Anthropic/xAI consoles.
+3. Review `usage_events` for that key.
+4. Rotate platform/BYOK provider keys if they may be exposed.
 
-### 11.3 Cost runaway
+### Cost runaway
 
-1. Lower `DEFAULT_RPM` / `DEFAULT_MAX_TOKENS`; restart.
+1. Lower `DEFAULT_RPM` / `DEFAULT_MAX_TOKENS`; tighten budgets.
 2. Revoke high-spend keys.
-3. Temporarily unset provider env keys to hard-stop upstream spend (chat will 502).
-4. Inspect usage table for top keys/models.
+3. Unset platform keys or zero credits to hard-stop spend.
+4. Inspect usage and wallet ledger.
 
-### 11.4 Full process restart
+### Restart
 
 ```bash
-# local
-# Ctrl+C then:
 pnpm dev
-
-# compose
+# compose:
 docker compose restart api
-# or
 docker compose up -d --build api
 ```
 
@@ -545,59 +548,65 @@ Memory store: re-create keys. Postgres: keys persist.
 
 ---
 
-## 12. Build, test, release checklist
+## 15. Build / deploy checklist
 
 ```bash
 pnpm install
-pnpm test          # must pass (no live network)
+pnpm test
 pnpm typecheck
-pnpm build         # emits apps/api/dist + schema/models copy
+pnpm build
 ```
 
 **Pre-deploy**
 
-- [ ] `AIHAY_KEY_PEPPER` set and backed up
-- [ ] `AIHAY_DEV_KEY` disabled or randomized if public
-- [ ] Provider keys injected via secrets manager
+- [ ] `AIHAY_KEY_PEPPER` and `SESSION_SECRET` strong and backed up
+- [ ] `AIHAY_DEV_KEY` disabled or random if public
+- [ ] Provider keys via secrets manager
 - [ ] `DATABASE_URL` + `REDIS_URL` for multi-instance
-- [ ] `/health` and `/ready` wired to orchestrator
-- [ ] Smoke against staging with live key
+- [ ] `BYOK_MASTER_KEY` if `FEATURE_BYOK=true`
+- [ ] `/health` and `/ready` on orchestrator
+- [ ] Staging smoke with live key
 - [ ] Log aggregation on stdout JSON
+- [ ] `/metrics` not public
 
 ---
 
-## 13. Common commands cheat sheet
+## 16. Command cheat sheet
 
 ```bash
 pnpm install
 pnpm dev
+pnpm dev:web
+pnpm dev:full
 pnpm test
 pnpm typecheck
 pnpm build
+pnpm start
+
 pnpm keys create --name <name>
 pnpm keys list
 pnpm keys revoke --prefix sk-aihay-xxxx
 pnpm migrate
 pnpm smoke
 pnpm spike:chat --provider openai|anthropic|xai --model <upstream-id>
-docker compose up --build
+./sample_test.sh
+
+docker compose up --build -d
+docker compose --profile full up --build -d
 docker compose logs -f api
 docker compose down
 ```
 
 ---
 
-## 14. Scope reminders (V1)
+## 17. Product scope (current)
 
-| In runbook scope | Not in V1 product |
+| In scope | Out of scope (for now) |
 | --- | --- |
-| Operate self-host / Compose | Public multi-tenant signup |
-| CLI keys | Dashboard UI |
-| Metering tables/logs | Stripe / credits |
-| Text chat + fallbacks | Tools/vision, smart auto-routing |
+| Multi-provider chat gateway | Smart auto-routing (`aihay/auto` → V3) |
+| Control plane + dashboard | Full Stripe Checkout UI (webhook credit path exists) |
+| Budgets, BYOK, credits | Mid-stream model switch |
+| Tools/vision per capability matrix | Prompt storage by default |
+| Stream-through SSE | 100+ providers |
 
-When behavior contradicts this runbook, prefer **code + Architecture V1**, then update this file.
-
----
-
-*Runbook V1 — update when ports, env vars, store drivers, or operational procedures change.*
+When behavior contradicts this runbook, prefer **running code**, then update this file.

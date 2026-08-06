@@ -3,50 +3,43 @@
 | Field | Value |
 | --- | --- |
 | **Product** | AI Hay Router |
-| **Document type** | Architecture design (V2) — **draft / starting point** |
-| **Status** | Draft — productization after V1 gateway core |
+| **Document type** | Architecture design (current product) |
+| **Status** | As-built at **`v0.7.0`** |
 | **Last updated** | 2026-08-06 |
-| **Baseline** | [Architecture V1](./architecture-v1.md) (as-built gateway) |
-| **Companions** | [Product Specification](./product-spec.md) · [Implementation Plan V1](./implementation-plan-v1.md) · [Runbook](../runbook.md) |
-| **Primary stack (carry forward)** | TypeScript · Hono · Postgres · Redis · Docker |
+| **Companions** | [Product Specification](./product-spec.md) · [Implementation Plan](./implementation-plan-v2.md) · [Runbook](../runbook.md) |
+| **Primary stack** | TypeScript · Hono · Postgres · Redis · Docker · Next.js dashboard |
 
-This document defines **Architecture V2**: how AI Hay evolves from a **self-host gateway MVP** into a **productized multi-model platform** (control plane, tenancy, observability, commercial options) **without** abandoning V1 wire contracts or stream-through principles.
+This document describes **current architecture**: multi-model gateway + control plane (tenancy, observability, commercial options) with OpenAI-compatible wire contracts and stream-through principles.
 
-V2 is **not** “smart auto-routing.” Learned routers remain **V3 / Phase 3**.
+**Not in scope:** smart auto-routing (future V3). Fresh installs only — no multi-version upgrade path is maintained.
 
 ---
 
-## 1. From V1 to V2
+## 1. Product goals
 
-### 1.1 What V1 delivered (baseline)
+### 1.1 What is delivered today
 
-As implemented and operated today:
-
-| Capability | V1 state |
+| Capability | State |
 | --- | --- |
 | OpenAI-compatible chat + SSE stream-through | Done |
 | Providers | OpenAI, Anthropic, xAI (Grok) |
-| Auth | CLI / durable hashed keys + optional dev key |
-| Routing | Registry + model fallbacks; pre-commit stream failover only |
-| Metering | `usage_events` + cost estimate |
-| Limits | RPM + max_tokens clamp + optional daily tokens |
-| Deploy | Docker Compose (api + Postgres + Redis) or memory store |
-| Ops | Structured JSON logs, `/health` `/ready`, runbook |
-| Identity UI | **None** (no signup, no dashboard) |
-| Metrics / traces | **Minimal** (logs + usage SQL) |
-| Billing / BYOK | **Out** |
+| Auth | CLI / durable hashed keys + optional dev key + session control plane |
+| Routing | Registry + aliases + model fallbacks; pre-commit stream failover only |
+| Metering | `usage_events` + cost estimate + `credential_mode` |
+| Limits | RPM, max_tokens clamp, daily tokens, workspace budgets |
+| Deploy | Docker Compose (api + Postgres + Redis + optional web) or memory store |
+| Ops | Structured JSON logs, `request_complete`, `/metrics`, `/health` `/ready` |
+| Control plane + dashboard | Done |
+| BYOK / credits | Done (feature-flagged) |
+| Tools / vision | Done (capability matrix + flag) |
 
-### 1.2 Why V2
+### 1.2 Design drivers
 
-V1 proves the **data plane** (proxy + adapters + meter). Gaps that block broader adoption:
-
-1. **Operators need a UI** — keys, usage, recent errors without SQL.  
-2. **Teams need tenancy** — workspaces, multiple developers, roles.  
-3. **Customers need BYOK / commercial clarity** — own provider bills or prepaid credits.  
-4. **Production needs monitoring** — metrics, alerts, request completion logs.  
-5. **Apps need richer API surface** — tools/vision, aliases, more providers.  
-
-V2 addresses **productization and operability**, not catalog vanity or ML routing.
+1. **Operators need a UI** — keys, usage, BYOK, wallet without SQL.  
+2. **Teams need tenancy** — workspaces, roles, audit.  
+3. **Commercial clarity** — BYOK and/or prepaid credits.  
+4. **Production monitoring** — metrics, alerts, completion logs.  
+5. **Richer API surface** — tools/vision, aliases, more providers over time.
 
 ### 1.3 V2 one-liner
 
@@ -443,33 +436,32 @@ Admin APIs authenticate **users**, not API keys. Data plane remains key-only for
 
 ---
 
-## 12. Compatibility & migration from V1
+## 12. Wire compatibility & feature flags
 
 ### 12.1 Wire compatibility
 
-- Existing `sk-aihay-…` keys continue to work.  
-- Chat Completions request/response shapes remain OpenAI-compatible.  
-- New fields optional and ignored by old clients.
+- `sk-aihay-…` keys and OpenAI Chat Completions shapes are the external contract.  
+- Optional response headers / body fields may be added without breaking clients.
 
-### 12.2 Self-host upgrade path
+### 12.2 Fresh install
 
-1. Run DB migrations (users/orgs nullable first).  
-2. Create default org + workspace from V1 default workspace.  
-3. Attach existing API keys to that workspace.  
-4. Enable dashboard optionally (`web` service).  
-5. Turn on metrics endpoint; ship logs as before.
+1. Configure `.env` from `.env.example`.  
+2. Start with Compose or `pnpm dev` (migrations apply on Postgres boot).  
+3. Optionally start dashboard (`pnpm dev:web` or Compose profile `full`).  
+4. Create keys via CLI, control API, or UI.
 
 ### 12.3 Feature flags
 
-| Flag | Default early V2 | Meaning |
+| Flag | Typical default | Meaning |
 | --- | --- | --- |
-| `CONTROL_PLANE` | off/on per deploy | Dashboard + user auth |
-| `BYOK` | off | Workspace provider secrets |
-| `CREDITS` | off | Wallet enforcement |
-| `TOOLS_VISION` | off → on | Expand content policy |
-| `ALIASES` | off → on | Virtual models |
-| `SEMANTIC_CACHE` | off | Expensive path |
-| `OTEL` | off | Traces |
+| `FEATURE_CONTROL_PLANE` | on | Dashboard + user auth |
+| `FEATURE_BYOK` | off | Workspace provider secrets |
+| `FEATURE_CREDITS` | off | Wallet enforcement |
+| `FEATURE_TOOLS_VISION` | off | Tools + multimodal policy |
+| `FEATURE_ALIASES` | on | Virtual models |
+| `FEATURE_BUDGETS` | on | Daily budget policies |
+| `FEATURE_SEMANTIC_CACHE` | off | Expensive path (if ever enabled) |
+| `FEATURE_OTEL` | off | Traces |
 
 ---
 

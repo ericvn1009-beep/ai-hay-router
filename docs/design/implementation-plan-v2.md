@@ -4,12 +4,11 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V2) |
-| **Status** | In progress — V2.0–**V2.7** done (`v0.7.0`); V2 program complete for core flags |
+| **Status** | **Shipped** — product surface complete at **`v0.7.0`** (fresh installs only; no upgrade path maintained) |
 | **Last updated** | 2026-08-06 |
-| **Based on** | [Architecture V2](./architecture-v2.md) · [Architecture V1](./architecture-v1.md) · [Product Spec](./product-spec.md) |
-| **Baseline code** | `apps/api` V1 gateway (Compose, keys, metering, OpenAI/Anthropic/xAI) |
-| **Goal** | Productize the control plane, observability, tenancy, commercial hooks, and richer API surface **without** breaking V1 wire contracts or stream-through laws |
-| **First V2 tag** | `v0.2.0` (after V2.0 observability) → cumulative tags per phase below |
+| **Based on** | [Architecture](./architecture-v2.md) · [Product Spec](./product-spec.md) |
+| **Code** | `apps/api` + `apps/web` (current gateway + control plane) |
+| **Goal** | Record of phases that built the current product; ops live in [Runbook](../runbook.md) |
 
 This plan turns Architecture V2 into **ordered, demoable phases** with tasks, acceptance criteria, testing expectations, and a definition of done. It deliberately **excludes** smart/auto routing (V3).
 
@@ -24,7 +23,7 @@ When V2 is complete for a given deployment profile, operators and teams can:
 3. Enforce **budgets** and resolve **aliases** (`aihay/cheap`, …).  
 4. Optionally use **BYOK** and/or **credits** without rewriting adapters.  
 5. Use **tools/vision** where the capability matrix allows.  
-6. Upgrade from V1 self-host via **migrations + feature flags** without reissuing every integration.
+6. Feature flags tune surface area without rewrites.
 
 ### 1.1 Success metrics (directional)
 
@@ -238,7 +237,7 @@ docker compose logs api 2>&1 | grep request_complete
 
 ### V2.1 — Tenancy foundation
 
-**Goal:** Multi-workspace data model with safe migration from V1 single workspace; still CLI-operable.
+**Goal:** Multi-workspace data model; CLI-operable keys and workspaces.
 
 #### Tasks
 
@@ -252,11 +251,11 @@ docker compose logs api 2>&1 | grep request_complete
 | 2.1.6 | Enforce workspace scope in all key/usage queries | |
 | 2.1.7 | CLI `keys` accepts `--workspace` optional | Default workspace if omitted |
 | 2.1.8 | Integration tests: two workspaces cannot read each other’s keys/usage | **Required** |
-| 2.1.9 | Document upgrade path V1 → V2.1 in runbook | |
+| 2.1.9 | Document tenancy ops in runbook | |
 
 #### Acceptance criteria
 
-- [x] Fresh install and upgraded V1 DB both work (ordered SQL migrations + bootstrap).  
+- [x] Fresh install applies ordered SQL migrations + bootstrap.  
 - [x] Existing `sk-aihay-…` keys still authenticate.  
 - [x] Cross-tenant isolation tests pass (memory multi-workspace).  
 - [x] Memory store supports multi-workspace (createWorkspace / scoped list/revoke).  
@@ -457,7 +456,7 @@ Inherit V1 rules (unit from day one; no mandatory live CI). Additions:
 | Unit | Flags, alias resolve, budget math, wallet debit, encryption helpers |
 | Integration | Control authz matrix; chat still works with keys; metrics scrape |
 | Tenant isolation | **Mandatory** from V2.1 |
-| Migration | Upgrade fixture DB from V1 schema → current |
+| Migration | Fresh DB applies ordered migrations |
 | E2E | Dashboard path (Playwright) from V2.3 optional but recommended |
 | Load (optional) | Completion log + metrics overhead &lt; noise |
 
@@ -476,7 +475,7 @@ Inherit V1 rules (unit from day one; no mandatory live CI). Additions:
 
 - [ ] V2.0–V2.3 done (observability + tenancy + control API + dashboard)  
 - [ ] At least one of V2.4 budgets/aliases **or** V2.5 BYOK **or** V2.6 credits shipped to match business choice  
-- [ ] V1 gateway-only profile still green  
+- [ ] Gateway profile (API without web) still green  
 - [ ] Cross-tenant tests green  
 - [ ] Runbook updated for full profile  
 - [ ] No smart-router scope creep  
@@ -550,7 +549,7 @@ Still open (do not block V2.0):
 | Doc | When |
 | --- | --- |
 | Runbook observability + alerts | V2.0 |
-| Runbook upgrade V1→V2.1 | V2.1 |
+| Runbook (current ops) | Always |
 | Control API reference | V2.2 |
 | Dashboard user guide (short) | V2.3 |
 | BYOK security notes | V2.5 |
@@ -582,7 +581,7 @@ Still open (do not block V2.0):
 | **V2.3 Dashboard** | Human self-serve |
 | **V2.4–V2.7** | Budgets/aliases, BYOK, credits, tools — by business priority |
 
-**Start here:** Phase **V2.0** tasks 2.0.1–2.0.10 → tag `v0.2.0`.
+**Current:** all phases through V2.7 shipped at tag **`v0.7.0`**. Operate via [Runbook](../runbook.md) and [README](../../README.md).
 
 ---
 

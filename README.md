@@ -1,56 +1,41 @@
-# ai-hay-router
+# AI Hay Router
 
-**AI Hay Router** — OpenAI-compatible multi-model gateway (TypeScript / Hono).
+**Version `0.7.0`** — OpenAI-compatible multi-model LLM gateway (TypeScript / Hono).
 
-One API key → **OpenAI + Anthropic (Claude) + xAI (Grok)**, streaming, model fallbacks, usage metering.
+One AI Hay API key → **OpenAI + Anthropic (Claude) + xAI (Grok)** with streaming, aliases, fallbacks, usage metering, control plane, dashboard, budgets, BYOK, credits, and optional tools/vision.
 
-## Status (V1)
+## Features
 
-| Phase | Status |
+| Area | What you get |
 | --- | --- |
-| 0 Spike adapters | Done |
-| 1a–1d V1 gateway | Done |
-| **V2.0 Observability** | Done — `request_complete` logs + `GET /metrics` |
-| **V2.1 Tenancy** | Done — orgs/workspaces migrations + isolation |
-| **V2.2 Control plane API** | Done — `/control/v1` auth, keys, usage, invites |
-| **V2.3 Dashboard** | Done — `apps/web` at port 3001 |
-| Tag | `0.4.0` |
+| Data plane | `POST /v1/chat/completions`, `GET /v1/models` (OpenAI SDK drop-in) |
+| Providers | OpenAI, Anthropic, xAI (Grok) |
+| Aliases | `aihay/cheap`, `aihay/balanced`, `aihay/smart`, `aihay/fast` |
+| Auth | Dev key, CLI/hashed keys, dashboard session auth |
+| Tenancy | Orgs, workspaces, memberships, audit log |
+| Ops | JSON logs (`request_complete`), Prometheus `/metrics` |
+| Limits | RPM, daily tokens, workspace budgets |
+| Commercial | BYOK (encrypted), prepaid credits/wallet |
+| Rich API | Tools + vision when `FEATURE_TOOLS_VISION=true` and model supports |
+| Dashboard | Keys, usage, BYOK, wallet (`apps/web` :3001) |
 
-## Quickstart (memory mode — no Docker DB)
+## Quickstart (local, memory store)
 
 ```bash
 # Node 22+ and pnpm
 pnpm install
 cp .env.example .env
-# optional: OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY for live chat
+# optional for live chat: OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY
 
 pnpm test
-pnpm dev          # API http://localhost:3000
-pnpm dev:web      # Dashboard http://localhost:3001 (needs API running)
-```
-
-### Dashboard (V2.3)
-
-1. Start API with control plane (`FEATURE_CONTROL_PLANE=true`, default).
-2. `pnpm dev:web` → open http://localhost:3001  
-3. Register → create API key → use key on `:3000/v1/*`
-
-```bash
-# Full stack via Compose
-docker compose --profile full up --build -d
-# API :3000  ·  Web :3001  ·  Postgres  ·  Redis
+pnpm dev          # API  http://localhost:3000
+pnpm dev:web      # UI   http://localhost:3001  (API must be running)
 ```
 
 ```bash
-# health
 curl -s localhost:3000/health
-
-# models (dev key)
 curl -s localhost:3000/v1/models \
   -H "Authorization: Bearer sk-aihay-dev-local"
-
-# create a real hashed key (memory store in process — use postgres for durable keys)
-pnpm keys create --name local-dev
 ```
 
 ```ts
@@ -62,79 +47,107 @@ const client = new OpenAI({
 });
 
 const stream = await client.chat.completions.create({
-  model: "openai/gpt-4o-mini",
+  model: "openai/gpt-4o-mini", // or aihay/cheap
   messages: [{ role: "user", content: "hi" }],
   stream: true,
 });
 ```
 
-## Docker Compose (Postgres + Redis)
+## Docker Compose
 
 ```bash
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 export XAI_API_KEY=xai-...
-docker compose up --build
+
+# API + Postgres + Redis
+docker compose up --build -d
+
+# API + web dashboard + Postgres + Redis
+docker compose --profile full up --build -d
+# API :3000  ·  Web :3001  ·  Postgres :5432  ·  Redis :6379
 ```
 
-### Models (seed)
-
-| AI Hay id | Provider |
-| --- | --- |
-| `openai/gpt-4o-mini`, `openai/gpt-4o` | OpenAI |
-| `anthropic/claude-3-5-haiku-latest`, `anthropic/claude-sonnet-4-0` | Anthropic |
-| `xai/grok-4.5`, `xai/grok-3`, `xai/grok-3-mini` | xAI Grok |
+Schema migrations run automatically on API boot when using Postgres. Manual apply:
 
 ```bash
-pnpm spike:chat --provider xai --model grok-4.5
+DATABASE_URL=postgres://aihay:aihay@localhost:5432/aihay pnpm migrate
 ```
 
-Then create a durable key against the API container (or run CLI with `DATABASE_URL`):
+Durable API key (same DB as Compose):
 
 ```bash
 DATABASE_URL=postgres://aihay:aihay@localhost:5432/aihay \
-AIHAY_KEY_PEPPER=change-me-in-production \
 STORE_DRIVER=postgres \
+AIHAY_KEY_PEPPER=change-me-in-production \
 pnpm keys create --name compose-dev
 ```
 
-```bash
-pnpm smoke   # partial without live keys; set OPENAI_API_KEY + SMOKE_LIVE=1 for full
-```
+## Models
 
-## CLI
+| AI Hay id | Provider | tools | vision |
+| --- | --- | --- | --- |
+| `openai/gpt-4o-mini`, `openai/gpt-4o` | OpenAI | yes | yes |
+| `anthropic/claude-3-5-haiku-latest`, `anthropic/claude-sonnet-4-0` | Anthropic | yes | yes |
+| `xai/grok-4.5` | xAI | yes | yes |
+| `xai/grok-3`, `xai/grok-3-mini` | xAI | yes | no |
+| `aihay/cheap` → `openai/gpt-4o-mini` | alias | — | — |
+| `aihay/balanced` → `anthropic/claude-3-5-haiku-latest` | alias | — | — |
+| `aihay/smart` → `openai/gpt-4o` | alias | — | — |
+| `aihay/fast` → `xai/grok-3-mini` | alias | — | — |
+
+Registry: `apps/api/models.yaml`.
+
+## Commands
 
 ```bash
+pnpm install
+pnpm dev / pnpm dev:web / pnpm dev:full
+pnpm test
+pnpm typecheck
+pnpm build
+pnpm start
+
 pnpm keys create --name <name>
 pnpm keys list
 pnpm keys revoke --prefix sk-aihay-xxxx
-pnpm migrate          # apply schema (needs DATABASE_URL)
-pnpm spike:chat --provider openai --model gpt-4o-mini
+pnpm migrate
+pnpm smoke
+pnpm spike:chat --provider openai|anthropic|xai --model <upstream-id>
+
+./sample_test.sh          # needs AIHAY_API_KEY or uses dev key
 ```
 
-## V1 scope (locked)
+## Feature flags
 
-- Text chat only (tools/vision → 400)
-- CLI keys / optional dev key — **no user signup**
-- Stream failover **before first client byte** only
-- Model fallback primary reliability path
-- Meter one usage row per terminal request
+See [`.env.example`](./.env.example). Common ones:
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `FEATURE_CONTROL_PLANE` | `true` | `/control/v1/*` + dashboard auth |
+| `FEATURE_ALIASES` | `true` | `aihay/*` model ids |
+| `FEATURE_BUDGETS` | `true` | Workspace daily hard/soft caps |
+| `FEATURE_BYOK` | `false` | Workspace provider secrets |
+| `FEATURE_CREDITS` | `false` | Prepaid wallet |
+| `FEATURE_TOOLS_VISION` | `false` | Tools + multimodal messages |
+| `FEATURE_METRICS` | `true` | `GET /metrics` |
+| `FEATURE_COMPLETION_LOGS` | `true` | `request_complete` log lines |
 
 ## Ops
 
-- **[Runbook](./docs/runbook.md)** — start, configure, keys, health, troubleshooting, incidents
+**[Runbook](./docs/runbook.md)** — configure, deploy, keys, control plane, BYOK, credits, metrics, troubleshooting.
 
 ## Design docs
 
 | Doc | Role |
 | --- | --- |
-| [Product Spec](./docs/design/product-spec.md) | What / why |
-| [Architecture V1](./docs/design/architecture-v1.md) | System design (as-built gateway) |
-| [Architecture V2](./docs/design/architecture-v2.md) | Productization target (tenancy, ops, commercial) |
-| [Scalability](./docs/design/scalability.md) | Scale stages, RPS vs streams, multi-region / hyperscale |
-| [Implementation Plan V1](./docs/design/implementation-plan-v1.md) | V1 phases + layout + testing |
-| [Implementation Plan V2](./docs/design/implementation-plan-v2.md) | V2.0–V2.7 execution plan |
-| [Runbook](./docs/runbook.md) | Operate and debug V1 |
+| [Product Spec](./docs/design/product-spec.md) | Product intent |
+| [Architecture](./docs/design/architecture-v2.md) | System design (current product surface) |
+| [Scalability](./docs/design/scalability.md) | Scale stages and capacity notes |
+| [Implementation Plan](./docs/design/implementation-plan-v2.md) | Shipped phase record |
+| [Runbook](./docs/runbook.md) | Operate and debug |
+
+Historical design notes: `architecture-v1.md`, `implementation-plan-v1.md` (archived planning).
 
 ## Research
 
