@@ -7,3 +7,6 @@ dist/
 coverage/
 .turbo/
 *.tsbuildinfo
+apps/web/.next/
+apps/web/out/
+

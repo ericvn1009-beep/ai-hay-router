@@ -1,7 +1,7 @@
 {
   "name": "ai-hay-router",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "AI Hay Router — unified multi-model LLM API",
   "packageManager": "pnpm@11.20.0",
   "engines": {
@@ -9,10 +9,15 @@
   },
   "scripts": {
     "dev": "pnpm --filter @aihay/api dev",
-    "build": "pnpm --filter @aihay/api build",
+    "dev:web": "pnpm --filter @aihay/web dev",
+    "dev:full": "pnpm --filter @aihay/api dev & pnpm --filter @aihay/web dev",
+    "build": "pnpm -r build",
+    "build:api": "pnpm --filter @aihay/api build",
+    "build:web": "pnpm --filter @aihay/web build",
     "start": "pnpm --filter @aihay/api start",
+    "start:web": "pnpm --filter @aihay/web start",
     "test": "pnpm --filter @aihay/api test",
-    "typecheck": "pnpm --filter @aihay/api typecheck",
+    "typecheck": "pnpm -r typecheck",
     "spike:chat": "pnpm --filter @aihay/api spike:chat",
     "aihay": "pnpm --filter @aihay/api keys",
     "keys": "pnpm --filter @aihay/api keys",

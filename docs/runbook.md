@@ -268,6 +268,26 @@ curl -s localhost:3000/v1/models -H "Authorization: Bearer sk-aihay-..."
 
 Catalog: `GET /control/v1`. Disable control plane: `FEATURE_CONTROL_PLANE=false`.
 
+### Dashboard UI (V2.3)
+
+```bash
+# Terminal 1 — API
+pnpm dev
+
+# Terminal 2 — Web (BFF proxies /api/control → AIHAY_API_URL)
+AIHAY_API_URL=http://127.0.0.1:3000 pnpm dev:web
+# → http://localhost:3001
+```
+
+Compose **full** profile:
+
+```bash
+docker compose --profile full up --build -d
+# web on :3001 talks to api:3000 inside the network
+```
+
+Pages: `/register`, `/login`, `/keys` (create/revoke), `/usage` (summary + recent).
+
 Useful response headers: `x-request-id`, `x-aihay-model`, `x-aihay-provider`.
 
 **Network note:** Protect `/metrics` at the edge (not public internet) in production.

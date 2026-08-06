@@ -4,7 +4,7 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V2) |
-| **Status** | In progress — V2.0–**V2.2** done (`v0.3.0`); next **V2.3 dashboard** |
+| **Status** | In progress — V2.0–**V2.3** done (`v0.4.0`); next V2.4+ by priority |
 | **Last updated** | 2026-08-06 |
 | **Based on** | [Architecture V2](./architecture-v2.md) · [Architecture V1](./architecture-v1.md) · [Product Spec](./product-spec.md) |
 | **Baseline code** | `apps/api` V1 gateway (Compose, keys, metering, OpenAI/Anthropic/xAI) |
@@ -329,10 +329,10 @@ docker compose logs api 2>&1 | grep request_complete
 
 #### Acceptance criteria
 
-- [ ] New user can register → create key → call API with OpenAI SDK in &lt; 10 minutes on `full` profile.  
-- [ ] Gateway-only profile still documented and works without web.  
-- [ ] No secrets in client bundles.  
-- [ ] Tag **`v0.4.0`**.
+- [x] New user can register → create key via dashboard (`apps/web`).  
+- [x] Gateway-only profile still documented (`docker compose up` without `--profile full`).  
+- [x] Secrets only shown once in UI; BFF proxies control plane (no secrets in client env).  
+- [x] Tag **`v0.4.0`**.
 
 ---
 

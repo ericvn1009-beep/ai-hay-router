@@ -13,6 +13,10 @@ services:
       REDIS_URL: redis://redis:6379
       AIHAY_KEY_PEPPER: ${AIHAY_KEY_PEPPER:-change-me-in-production}
       AIHAY_DEV_KEY: ${AIHAY_DEV_KEY:-sk-aihay-dev-local}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-session-secret}
+      FEATURE_CONTROL_PLANE: ${FEATURE_CONTROL_PLANE:-true}
+      FEATURE_METRICS: ${FEATURE_METRICS:-true}
+      FEATURE_COMPLETION_LOGS: ${FEATURE_COMPLETION_LOGS:-true}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       XAI_API_KEY: ${XAI_API_KEY:-}
@@ -23,6 +27,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+
+  # Dashboard (V2.3) — enable with: docker compose --profile full up -d
+  web:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      AIHAY_API_URL: http://api:3000
+      PORT: "3001"
+    depends_on:
+      - api
 
   postgres:
     image: postgres:16-alpine

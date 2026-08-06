@@ -13,7 +13,8 @@ One API key → **OpenAI + Anthropic (Claude) + xAI (Grok)**, streaming, model f
 | **V2.0 Observability** | Done — `request_complete` logs + `GET /metrics` |
 | **V2.1 Tenancy** | Done — orgs/workspaces migrations + isolation |
 | **V2.2 Control plane API** | Done — `/control/v1` auth, keys, usage, invites |
-| Tag | `0.3.0` |
+| **V2.3 Dashboard** | Done — `apps/web` at port 3001 |
+| Tag | `0.4.0` |
 
 ## Quickstart (memory mode — no Docker DB)
 
@@ -24,7 +25,20 @@ cp .env.example .env
 # optional: OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY for live chat
 
 pnpm test
-pnpm dev
+pnpm dev          # API http://localhost:3000
+pnpm dev:web      # Dashboard http://localhost:3001 (needs API running)
+```
+
+### Dashboard (V2.3)
+
+1. Start API with control plane (`FEATURE_CONTROL_PLANE=true`, default).
+2. `pnpm dev:web` → open http://localhost:3001  
+3. Register → create API key → use key on `:3000/v1/*`
+
+```bash
+# Full stack via Compose
+docker compose --profile full up --build -d
+# API :3000  ·  Web :3001  ·  Postgres  ·  Redis
 ```
 
 ```bash
