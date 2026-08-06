@@ -6,7 +6,7 @@
 | **Document type** | Architecture design (V1) |
 | **Status** | Ready to build (synced with Product Spec + Implementation Plan) |
 | **Last updated** | 2026-08-05 |
-| **Companions** | [Product Specification](./product-spec.md) 路 [Implementation Plan V1](./implementation-plan-v1.md) |
+| **Companions** | [Product Specification](./product-spec.md) 路 [Implementation Plan V1](./implementation-plan-v1.md) 路 [Architecture V2](./architecture-v2.md) (next) |
 | **Primary stack** | TypeScript 路 Hono 路 Postgres 路 Redis 路 Docker Compose |
 | **First release tag** | `v0.1.0` |
 
@@ -941,6 +941,7 @@ V1 metering is **billing-ready**, not billing-complete. Research on OpenRouter鈥
 | --- | --- |
 | [Product Specification](./product-spec.md) | *What* and *why* |
 | **This document** | *How* V1 is structured |
+| [Architecture V2](./architecture-v2.md) | *How* productization / multi-tenant evolves after V1 |
 | [Implementation Plan (V1)](./implementation-plan-v1.md) | *How* we execute (phases, tasks, DoD) |
 | [How to Build](../how-to-build-ai-model-router.md) | Implementation sequence |
 | [Router vs Gateway](../router-vs-gateway.md) | Concept split |
