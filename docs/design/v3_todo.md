@@ -6,10 +6,12 @@
 | **Document type** | Forward backlog (V3) |
 | **Status** | Open — not scheduled |
 | **Baseline** | Shipped product **`v0.7.0`** (gateway + tenant control plane + thin dashboard) |
-| **Last updated** | 2026-08-06 (Keys guide + Models page backlog) |
+| **Last updated** | 2026-08-06 (smart routing moved to lowest priority) |
 | **Related** | [Runbook](../runbook.md) · [Architecture](./architecture-v2.md) · [README](../../README.md) |
 
 Work **not** in the current product surface. Order below is intentional priority for planning; nothing here is committed until an implementation plan is cut.
+
+**Priority order (highest → lowest):** platform admin → ops monitor → product polish → **smart / auto routing last**.
 
 ---
 
@@ -86,23 +88,9 @@ Work **not** in the current product surface. Order below is intentional priority
 
 ---
 
-## Priority 3 — Smart / auto routing (classic V3)
+## Priority 3 — Product polish (tenant dashboard & commercial UX)
 
-Deferred product: learned or eval-linked routing. Do **not** start until metering + admin observability are trustworthy.
-
-- [ ] Eval harness and offline datasets  
-- [ ] Rules engine expansion (beyond static aliases)  
-- [ ] Optional classifier / preference model path (async or tiny side path)  
-- [ ] `aihay/auto` virtual model with explicit policy docs  
-- [ ] No mid-stream switch; hold stream-through laws  
-- [ ] Cost/latency tradeoff policies per workspace  
-- [ ] Scalability review (routing CPU off hot path) — see [scalability.md](./scalability.md)  
-
----
-
-## Priority 4 — Product polish (after admin baseline)
-
-### 4.1 API Keys page — “How to use your API key” guide
+### 3.1 API Keys page — “How to use your API key” guide
 
 **Gap:** Dashboard `/keys` can create/revoke keys but does not explain how to call the gateway.
 
@@ -119,7 +107,7 @@ Deferred product: learned or eval-linked routing. Do **not** start until meterin
 
 - [ ] New user can create a key and complete a first successful chat call using only the Keys page guide (no external docs required)  
 
-### 4.2 Models page — list available models for API keys
+### 3.2 Models page — list available models for API keys
 
 **Gap:** Dashboard has no catalog of models clients can call with workspace API keys; users must hit `GET /v1/models` or read docs.
 
@@ -137,7 +125,7 @@ Deferred product: learned or eval-linked routing. Do **not** start until meterin
 - [ ] Logged-in user can open Models and see every active registry id + alias without calling the data plane with an API key  
 - [ ] Catalog matches `GET /v1/models` for the same deployment flags (e.g. aliases on/off)  
 
-### 4.3 Other tenant UI polish
+### 3.3 Other tenant UI polish
 
 - [ ] Tenant UI: budgets form, members/invites, audit page, workspace switcher  
 - [ ] Stripe Checkout (or equivalent) for self-serve credit top-up  
@@ -145,6 +133,20 @@ Deferred product: learned or eval-linked routing. Do **not** start until meterin
 - [ ] Additional providers on demand (Gemini, Groq, …)  
 - [ ] Embeddings API (if product asks)  
 - [ ] Semantic cache (flagged; off by default)  
+
+---
+
+## Priority 4 — Smart / auto routing (**lowest**)
+
+Deferred product: learned or eval-linked routing. **Last** after admin, ops, and tenant polish. Do **not** start until metering + admin observability are trustworthy and product priority is explicit.
+
+- [ ] Eval harness and offline datasets  
+- [ ] Rules engine expansion (beyond static aliases)  
+- [ ] Optional classifier / preference model path (async or tiny side path)  
+- [ ] `aihay/auto` virtual model with explicit policy docs  
+- [ ] No mid-stream switch; hold stream-through laws  
+- [ ] Cost/latency tradeoff policies per workspace  
+- [ ] Scalability review (routing CPU off hot path) — see [scalability.md](./scalability.md)  
 
 ---
 
@@ -161,6 +163,6 @@ Deferred product: learned or eval-linked routing. Do **not** start until meterin
 
 1. Turn **Priority 1 + 2** into `docs/design/architecture-v3-admin.md` (or expand this file) with API sketch:  
    `GET/POST /admin/v1/...`  
-2. Then `implementation-plan-v3.md` with phases (e.g. **V3.0 Admin API**, **V3.1 Admin UI**, **V3.2 Ops board**, **V3.x Smart routing**).  
+2. Then `implementation-plan-v3.md` with phases (e.g. **V3.0 Admin API**, **V3.1 Admin UI**, **V3.2 Ops board**, **V3.3 Tenant polish**, **V3.x Smart routing last**).  
 
 Until then, whole-system ops remains: **Prometheus `/metrics` + logs + SQL + runbook** (see [Runbook](../runbook.md)).
