@@ -5,7 +5,7 @@
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V1) |
 | **Status** | Ready to build (synced with Product Spec + Architecture) |
-| **Last updated** | 2026-08-05 |
+| **Last updated** | 2026-08-06 |
 | **Based on** | [Product Spec](./product-spec.md) · [Architecture V1](./architecture-v1.md) |
 | **Goal** | Ship a self-hostable OpenAI-compatible multi-model gateway with CLI keys, metering, model fallbacks, and docs |
 | **First release tag** | `v0.1.0` |
@@ -409,21 +409,85 @@ pnpm aihay keys revoke --prefix sk-aihay-abcd
 
 ---
 
-## 7. Testing plan
+## 7. Testing strategy (from the beginning)
 
-| Layer | What | When |
+**Decision (locked):** unit tests start in **Phase 0** and grow with every phase. Do not defer testing to “after MVP.” A multi-provider gateway fails most often in **transforms and policy**, which are cheap to unit-test and expensive to debug in production.
+
+### 7.1 Why unit tests from day one
+
+| Area | Risk without tests | Unit-test value |
 | --- | --- | --- |
-| Unit | Zod schemas, cost math, hash, attempt-plan, error classify | From 0 |
-| Adapter unit | Fixture SSE/JSON → OpenAI shape | 1a–1e |
-| Integration | App + mock providers (MSW/nock/undici mock) | 1b+ |
-| E2E smoke | Live optional against real APIs | 1d+ |
-| Manual | OpenAI SDK stream, abort, failover chaos | Each phase exit |
+| **Adapters** | Provider drift, SSE mapping, system-message bugs | Fixture-based parse/build without live keys |
+| **Validation / content policy** | Tools/vision leak into V1 | Enforce 400 paths in CI |
+| **Attempt plan** | Wrong fallback order, unbounded retries | Deterministic plan builder tests |
+| **Auth / metering (1b+)** | Key hash mistakes, cost math errors | Safe hot-path refactors |
+| **Stream commit / failover** | Mid-stream “retry” bugs | Guard rules and chaos with mocks |
 
-**Minimum CI for V1 merge to main:**
+This product is mostly **I/O + pure transforms**. Prefer unit tests for transforms; reserve live provider calls for optional smoke.
+
+### 7.2 Test pyramid (V1)
+
+| Layer | Required for merge? | What | When |
+| --- | --- | --- |
+| **Unit** | **Yes** | Zod, attempt-plan, cost, key hash, error classify, adapter fixtures (JSON/SSE) | Phase **0** onward |
+| **Integration (mock upstream)** | Yes once routes stabilize | Hono app + mocked `fetch` / upstream; no live keys | Phase **1b+** |
+| **Smoke script** | Yes for ship | `/health`, one non-stream, one stream (local stack) | Phase **1d** |
+| **Live provider E2E** | **No** (optional) | Real OpenAI/Anthropic; env-gated, manual or nightly | Phase **1d+** |
+| **Manual** | Phase exits | OpenAI SDK stream, abort, fallback chaos | Each phase demo |
+
+**Do not block V1 on:** full coverage %, browser e2e, load tests, or mandatory live CI.
+
+### 7.3 Rules of thumb (PR review)
+
+For each new module:
+
+1. **Pure logic** (plan, hash, cost, SSE parse, Zod) → **unit tests required** before merge.  
+2. **HTTP handler / pipeline** → at least one happy path + one error with **mock** upstream.  
+3. **Live provider** → optional; never the only proof.  
+4. **No** `await response.text()` full-buffer on stream path — add/adjust tests when touching stream code.  
+5. New **adapter** → non-stream fixture + stream fixture + `classifyError` cases (see adapter test matrix in Architecture).
+
+### 7.4 What to cover by phase
+
+| Phase | Minimum tests to add |
+| --- | --- |
+| **0** | Adapter buildRequest / parseResponse; Anthropic system split; error classify |
+| **1a** | Stream parse fixtures; validateAndNormalize (tools/vision reject); health/models if cheap |
+| **1b** | Key hash verify; cost estimate; usage row shape; auth middleware (valid/invalid/revoked) |
+| **1c** | Attempt plan + max attempts; model fallback order; stream pre-commit (no switch after first byte) with mocks |
+| **1d** | Smoke script (scripted curl or small Node client) against Compose |
+| **1e** | CI green; fill gaps; no live network in default `pnpm test` |
+
+### 7.5 Current baseline (as of first code drop)
+
+Already in repo under `apps/api`:
+
+- OpenAI / Anthropic adapter unit tests  
+- Anthropic stream → OpenAI chunk fixture  
+- Attempt-plan tests  
+- Chat schema / content-policy tests  
+- Registry YAML load tests  
+
+**Command:** `pnpm test` (no network). **Typecheck:** `pnpm typecheck`.
+
+Expand this suite as Phase 1b+ lands; do not reset or skip when adding features.
+
+### 7.6 Minimum CI for V1 merge to main
 
 1. `pnpm typecheck`  
-2. `pnpm test` (no live network)  
-3. Lint (if configured)  
+2. `pnpm test` (unit + mock integration only; **no live network**)  
+3. Lint (if/when configured)  
+
+Optional job (not required for merge): live smoke when `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` secrets exist.
+
+### 7.7 Explicit non-goals for V1 testing
+
+| Non-goal | Rationale |
+| --- | --- |
+| 100% line coverage gate | Diminishing returns; prefer critical-path tests |
+| Mandatory live CI on every PR | Flaky, costly, needs secrets |
+| Dashboard / UI e2e | No UI in V1 |
+| Full multi-region / load suite | Out of V1 scope |
 
 ---
 
@@ -452,8 +516,10 @@ pnpm aihay keys revoke --prefix sk-aihay-abcd
 - [ ] `request_id` on all responses  
 - [ ] Bounded retries; no mid-stream model switch  
 - [ ] Tools/vision rejected with 400  
-- [ ] Automated tests for adapters + attempt plan + fallback chaos  
+- [ ] **Unit tests from Phase 0** maintained and extended per §7 (adapters, plan, policy, auth/metering as added)  
+- [ ] Automated tests for adapters + attempt plan + fallback chaos (mock)  
 - [ ] Smoke script  
+- [ ] CI: `pnpm typecheck` + `pnpm test` (no live network)  
 
 ### Explicitly not done (and documented as such)
 
@@ -570,6 +636,7 @@ After V1 DoD:
 4. Registry + usage metering + spend floor  
 5. Model fallback (pre-commit stream failover only)  
 6. Docker + quickstart → tag **`v0.1.0`**  
+7. **Unit tests from Phase 0** (§7); mock integration; optional live smoke  
 
 Do not block V1 on user management, billing, aliases, tools/vision, or smart routing. Measure everything; productize accounts only when multi-tenant self-serve is the distribution model.
 
