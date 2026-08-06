@@ -37,18 +37,27 @@ export async function bootstrapStores(
       throw new Error("DATABASE_URL required when STORE_DRIVER=postgres");
     }
     pool = await createPgPool(config.DATABASE_URL);
-    await migrate(pool);
+    const applied = await migrate(pool);
     const stores = createPgStores(pool, config.AIHAY_KEY_PEPPER);
     keys = stores.keys;
     usage = stores.usage;
-    await keys.ensureDefaultWorkspace();
-    logger.info("store_postgres", { migrated: true });
+    const tenancy = await keys.ensureTenancyBootstrap();
+    logger.info("store_postgres", {
+      migrated: true,
+      migrations_applied: applied,
+      default_workspace_id: tenancy.workspaceId,
+      default_organization_id: tenancy.organizationId,
+    });
   } else {
     const mem = createMemoryStores(config.AIHAY_KEY_PEPPER);
     keys = mem.keys;
     usage = mem.usage;
-    await keys.ensureDefaultWorkspace();
-    logger.info("store_memory", { note: "set DATABASE_URL for postgres" });
+    const tenancy = await keys.ensureTenancyBootstrap();
+    logger.info("store_memory", {
+      note: "set DATABASE_URL for postgres",
+      default_workspace_id: tenancy.workspaceId,
+      default_organization_id: tenancy.organizationId,
+    });
   }
 
   let redis: Redis | null = null;

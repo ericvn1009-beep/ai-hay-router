@@ -1,9 +1,7 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { generateApiKeySecret, hashApiKey } from "../lib/hash.js";
+import { runMigrations } from "./migrate.js";
 import type {
   ApiKeyRecord,
   CreateKeyInput,
@@ -11,18 +9,15 @@ import type {
   KeyStore,
   UsageEventInput,
   UsageStore,
+  Workspace,
 } from "./types.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
 export async function createPgPool(databaseUrl: string): Promise<pg.Pool> {
-  const pool = new pg.Pool({ connectionString: databaseUrl });
-  return pool;
+  return new pg.Pool({ connectionString: databaseUrl });
 }
 
-export async function migrate(pool: pg.Pool): Promise<void> {
-  const sql = readFileSync(join(__dirname, "schema.sql"), "utf8");
-  await pool.query(sql);
+export async function migrate(pool: pg.Pool): Promise<string[]> {
+  return runMigrations(pool);
 }
 
 function mapKey(row: pg.QueryResultRow): ApiKeyRecord {
@@ -36,7 +31,18 @@ function mapKey(row: pg.QueryResultRow): ApiKeyRecord {
     dailyTokenLimit: row.daily_token_limit != null ? Number(row.daily_token_limit) : null,
     dailyCostUsdLimit:
       row.daily_cost_usd_limit != null ? Number(row.daily_cost_usd_limit) : null,
+    createdByUserId: row.created_by_user_id ?? null,
     revokedAt: row.revoked_at,
+    createdAt: row.created_at,
+  };
+}
+
+function mapWorkspace(row: pg.QueryResultRow): Workspace {
+  return {
+    id: row.id,
+    organizationId: row.organization_id ?? null,
+    name: row.name,
+    slug: row.slug ?? null,
     createdAt: row.created_at,
   };
 }
@@ -46,30 +52,102 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
   usage: UsageStore;
 } {
   const keys: KeyStore = {
-    async ensureDefaultWorkspace() {
+    async ensureTenancyBootstrap() {
       const existing = await pool.query(
-        `SELECT id FROM workspaces WHERE name = $1 LIMIT 1`,
-        ["default"],
+        `SELECT w.id AS workspace_id, w.organization_id
+         FROM workspaces w
+         WHERE w.name = 'default' OR w.slug = 'default'
+         ORDER BY w.created_at ASC
+         LIMIT 1`,
       );
-      if (existing.rows[0]) return existing.rows[0].id as string;
+      if (existing.rows[0]?.workspace_id && existing.rows[0]?.organization_id) {
+        return {
+          organizationId: existing.rows[0].organization_id as string,
+          workspaceId: existing.rows[0].workspace_id as string,
+        };
+      }
+
+      if (existing.rows[0]?.workspace_id && !existing.rows[0]?.organization_id) {
+        const orgId = randomUUID();
+        const slug = `org-${orgId.replace(/-/g, "").slice(0, 12)}`;
+        await pool.query(
+          `INSERT INTO organizations (id, name, slug) VALUES ($1, $2, $3)`,
+          [orgId, "default org", slug],
+        );
+        await pool.query(
+          `UPDATE workspaces SET organization_id = $1, slug = coalesce(slug, 'default') WHERE id = $2`,
+          [orgId, existing.rows[0].workspace_id],
+        );
+        return {
+          organizationId: orgId,
+          workspaceId: existing.rows[0].workspace_id as string,
+        };
+      }
+
+      const organizationId = randomUUID();
+      const workspaceId = randomUUID();
+      const orgSlug = `org-${organizationId.replace(/-/g, "").slice(0, 12)}`;
+      await pool.query(
+        `INSERT INTO organizations (id, name, slug) VALUES ($1, $2, $3)`,
+        [organizationId, "default org", orgSlug],
+      );
+      await pool.query(
+        `INSERT INTO workspaces (id, name, organization_id, slug) VALUES ($1, $2, $3, $4)`,
+        [workspaceId, "default", organizationId, "default"],
+      );
+      return { organizationId, workspaceId };
+    },
+
+    async ensureDefaultWorkspace() {
+      const { workspaceId } = await this.ensureTenancyBootstrap();
+      return workspaceId;
+    },
+
+    async createWorkspace(opts) {
+      const boot = await this.ensureTenancyBootstrap();
+      const organizationId = opts.organizationId ?? boot.organizationId;
       const id = randomUUID();
-      await pool.query(`INSERT INTO workspaces (id, name) VALUES ($1, $2)`, [
-        id,
-        "default",
-      ]);
-      return id;
+      const slug = opts.slug ?? `ws-${id.replace(/-/g, "").slice(0, 12)}`;
+      const res = await pool.query(
+        `INSERT INTO workspaces (id, name, organization_id, slug)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *`,
+        [id, opts.name, organizationId, slug],
+      );
+      return mapWorkspace(res.rows[0]);
+    },
+
+    async listWorkspaces(organizationId?: string) {
+      if (organizationId) {
+        const res = await pool.query(
+          `SELECT * FROM workspaces WHERE organization_id = $1 ORDER BY created_at ASC`,
+          [organizationId],
+        );
+        return res.rows.map(mapWorkspace);
+      }
+      const res = await pool.query(`SELECT * FROM workspaces ORDER BY created_at ASC`);
+      return res.rows.map(mapWorkspace);
+    },
+
+    async getWorkspace(workspaceId: string) {
+      const res = await pool.query(`SELECT * FROM workspaces WHERE id = $1`, [workspaceId]);
+      if (!res.rows[0]) return null;
+      return mapWorkspace(res.rows[0]);
     },
 
     async createKey(input: CreateKeyInput): Promise<CreateKeyResult> {
-      const workspaceId = await this.ensureDefaultWorkspace();
+      const workspaceId = input.workspaceId ?? (await this.ensureDefaultWorkspace());
+      const ws = await this.getWorkspace(workspaceId);
+      if (!ws) throw new Error(`Unknown workspace: ${workspaceId}`);
+
       const { secret, prefix } = generateApiKeySecret();
       const id = randomUUID();
       const keyHash = hashApiKey(secret, pepper);
       const res = await pool.query(
         `INSERT INTO api_keys (
           id, workspace_id, name, key_prefix, key_hash,
-          rate_limit_rpm, daily_token_limit, daily_cost_usd_limit
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          rate_limit_rpm, daily_token_limit, daily_cost_usd_limit, created_by_user_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
         RETURNING *`,
         [
           id,
@@ -80,19 +158,35 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
           input.rateLimitRpm ?? null,
           input.dailyTokenLimit ?? null,
           input.dailyCostUsdLimit ?? null,
+          input.createdByUserId ?? null,
         ],
       );
       return { record: mapKey(res.rows[0]), secret };
     },
 
-    async listKeys() {
-      const res = await pool.query(
-        `SELECT * FROM api_keys ORDER BY created_at DESC`,
-      );
+    async listKeys(opts) {
+      if (opts?.workspaceId) {
+        const res = await pool.query(
+          `SELECT * FROM api_keys WHERE workspace_id = $1 ORDER BY created_at DESC`,
+          [opts.workspaceId],
+        );
+        return res.rows.map(mapKey);
+      }
+      const res = await pool.query(`SELECT * FROM api_keys ORDER BY created_at DESC`);
       return res.rows.map(mapKey);
     },
 
-    async revokeByPrefix(prefix: string) {
+    async revokeByPrefix(prefix: string, opts) {
+      if (opts?.workspaceId) {
+        const res = await pool.query(
+          `UPDATE api_keys SET revoked_at = now()
+           WHERE revoked_at IS NULL
+             AND workspace_id = $3
+             AND (key_prefix LIKE $1 OR $2 LIKE key_prefix || '%')`,
+          [`${prefix}%`, prefix, opts.workspaceId],
+        );
+        return (res.rowCount ?? 0) > 0;
+      }
       const res = await pool.query(
         `UPDATE api_keys SET revoked_at = now()
          WHERE revoked_at IS NULL AND (key_prefix LIKE $1 OR $2 LIKE key_prefix || '%')`,
@@ -102,10 +196,9 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
     },
 
     async findByHash(keyHash: string) {
-      const res = await pool.query(
-        `SELECT * FROM api_keys WHERE key_hash = $1 LIMIT 1`,
-        [keyHash],
-      );
+      const res = await pool.query(`SELECT * FROM api_keys WHERE key_hash = $1 LIMIT 1`, [
+        keyHash,
+      ]);
       if (!res.rows[0]) return null;
       return mapKey(res.rows[0]);
     },
@@ -113,20 +206,29 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
 
   const usage: UsageStore = {
     async insert(event: UsageEventInput) {
+      let organizationId = event.organizationId ?? null;
+      if (!organizationId) {
+        const ws = await pool.query(
+          `SELECT organization_id FROM workspaces WHERE id = $1`,
+          [event.workspaceId],
+        );
+        organizationId = (ws.rows[0]?.organization_id as string | undefined) ?? null;
+      }
       await pool.query(
         `INSERT INTO usage_events (
-          id, request_id, api_key_id, workspace_id,
+          id, request_id, api_key_id, workspace_id, organization_id,
           model_requested, model_used, provider, endpoint_id,
           prompt_tokens, completion_tokens, cost_usd_estimate, usage_estimated,
           latency_ms, ttft_ms, status, error_code, attempt_count
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
         )`,
         [
           randomUUID(),
           event.requestId,
           event.apiKeyId,
           event.workspaceId,
+          organizationId,
           event.modelRequested,
           event.modelUsed,
           event.provider,
@@ -141,6 +243,37 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
           event.errorCode,
           event.attemptCount,
         ],
+      );
+    },
+
+    async listByWorkspace(workspaceId: string, limit = 100) {
+      const res = await pool.query(
+        `SELECT * FROM usage_events
+         WHERE workspace_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [workspaceId, limit],
+      );
+      return res.rows.map(
+        (row): UsageEventInput => ({
+          requestId: row.request_id,
+          apiKeyId: row.api_key_id,
+          workspaceId: row.workspace_id,
+          organizationId: row.organization_id,
+          modelRequested: row.model_requested,
+          modelUsed: row.model_used,
+          provider: row.provider,
+          endpointId: row.endpoint_id,
+          promptTokens: row.prompt_tokens,
+          completionTokens: row.completion_tokens,
+          costUsdEstimate: Number(row.cost_usd_estimate),
+          usageEstimated: row.usage_estimated,
+          latencyMs: row.latency_ms,
+          ttftMs: row.ttft_ms,
+          status: row.status,
+          errorCode: row.error_code,
+          attemptCount: row.attempt_count,
+        }),
       );
     },
   };

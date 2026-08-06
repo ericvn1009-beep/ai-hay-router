@@ -8,6 +8,8 @@ describe("memory key store", () => {
     const { keys, usage, usageEvents } = createMemoryStores(pepper);
     const created = await keys.createKey({ name: "dev" });
     expect(created.secret.startsWith("sk-aihay-")).toBe(true);
+    expect(created.record.workspaceId).toBeTruthy();
+    expect(created.record.createdByUserId).toBeNull();
 
     const found = await keys.findByHash(hashApiKey(created.secret, pepper));
     expect(found?.id).toBe(created.record.id);
@@ -31,6 +33,7 @@ describe("memory key store", () => {
       attemptCount: 1,
     });
     expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0].organizationId).toBeTruthy();
 
     const revoked = await keys.revokeByPrefix(created.record.keyPrefix);
     expect(revoked).toBe(true);

@@ -7,6 +7,7 @@ import type {
   KeyStore,
   UsageEventInput,
   UsageStore,
+  Workspace,
 } from "./types.js";
 
 export function createMemoryStores(pepper: string): {
@@ -14,17 +15,67 @@ export function createMemoryStores(pepper: string): {
   usage: UsageStore;
   usageEvents: UsageEventInput[];
 } {
-  let workspaceId = randomUUID();
+  const workspaces = new Map<string, Workspace>();
   const keys = new Map<string, ApiKeyRecord>();
   const usageEvents: UsageEventInput[] = [];
 
+  let defaultOrgId = randomUUID();
+  let defaultWorkspaceId = randomUUID();
+
+  function seedDefault() {
+    if (workspaces.has(defaultWorkspaceId)) return;
+    workspaces.set(defaultWorkspaceId, {
+      id: defaultWorkspaceId,
+      organizationId: defaultOrgId,
+      name: "default",
+      slug: "default",
+      createdAt: new Date(),
+    });
+  }
+
   const keyStore: KeyStore = {
     async ensureDefaultWorkspace() {
-      return workspaceId;
+      seedDefault();
+      return defaultWorkspaceId;
+    },
+
+    async ensureTenancyBootstrap() {
+      seedDefault();
+      return { organizationId: defaultOrgId, workspaceId: defaultWorkspaceId };
+    },
+
+    async createWorkspace(opts) {
+      seedDefault();
+      const id = randomUUID();
+      const organizationId = opts.organizationId ?? defaultOrgId;
+      const ws: Workspace = {
+        id,
+        organizationId,
+        name: opts.name,
+        slug: opts.slug ?? `ws-${id.replace(/-/g, "").slice(0, 12)}`,
+        createdAt: new Date(),
+      };
+      workspaces.set(id, ws);
+      return ws;
+    },
+
+    async listWorkspaces(organizationId?: string) {
+      seedDefault();
+      return [...workspaces.values()]
+        .filter((w) => !organizationId || w.organizationId === organizationId)
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    },
+
+    async getWorkspace(workspaceId: string) {
+      return workspaces.get(workspaceId) ?? null;
     },
 
     async createKey(input: CreateKeyInput): Promise<CreateKeyResult> {
-      await this.ensureDefaultWorkspace();
+      seedDefault();
+      const workspaceId = input.workspaceId ?? defaultWorkspaceId;
+      if (!workspaces.has(workspaceId)) {
+        throw new Error(`Unknown workspace: ${workspaceId}`);
+      }
       const { secret, prefix } = generateApiKeySecret();
       const record: ApiKeyRecord = {
         id: randomUUID(),
@@ -35,6 +86,7 @@ export function createMemoryStores(pepper: string): {
         rateLimitRpm: input.rateLimitRpm ?? null,
         dailyTokenLimit: input.dailyTokenLimit ?? null,
         dailyCostUsdLimit: input.dailyCostUsdLimit ?? null,
+        createdByUserId: input.createdByUserId ?? null,
         revokedAt: null,
         createdAt: new Date(),
       };
@@ -42,15 +94,16 @@ export function createMemoryStores(pepper: string): {
       return { record, secret };
     },
 
-    async listKeys() {
-      return [...keys.values()].sort(
-        (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-      );
+    async listKeys(opts) {
+      return [...keys.values()]
+        .filter((k) => !opts?.workspaceId || k.workspaceId === opts.workspaceId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     },
 
-    async revokeByPrefix(prefix: string) {
+    async revokeByPrefix(prefix: string, opts) {
       let found = false;
       for (const [hash, rec] of keys) {
+        if (opts?.workspaceId && rec.workspaceId !== opts.workspaceId) continue;
         if (rec.keyPrefix.startsWith(prefix) || prefix.startsWith(rec.keyPrefix)) {
           keys.set(hash, { ...rec, revokedAt: new Date() });
           found = true;
@@ -66,7 +119,18 @@ export function createMemoryStores(pepper: string): {
 
   const usageStore: UsageStore = {
     async insert(event) {
-      usageEvents.push(event);
+      const ws = workspaces.get(event.workspaceId);
+      usageEvents.push({
+        ...event,
+        organizationId: event.organizationId ?? ws?.organizationId ?? null,
+      });
+    },
+
+    async listByWorkspace(workspaceId: string, limit = 100) {
+      return usageEvents
+        .filter((e) => e.workspaceId === workspaceId)
+        .slice(-limit)
+        .reverse();
     },
   };
 

@@ -15,9 +15,10 @@ FROM deps AS build
 COPY apps/api apps/api
 # tsc only — no esbuild required for production build
 RUN pnpm --filter @aihay/api exec tsc -p tsconfig.json \
-  && mkdir -p apps/api/dist/db \
+  && mkdir -p apps/api/dist/db apps/api/dist/migrations \
   && cp apps/api/src/db/schema.sql apps/api/dist/db/schema.sql \
-  && cp apps/api/models.yaml apps/api/dist/models.yaml
+  && cp apps/api/models.yaml apps/api/dist/models.yaml \
+  && cp -R apps/api/migrations/. apps/api/dist/migrations/
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
@@ -32,6 +33,7 @@ RUN pnpm install --frozen-lockfile --prod --filter @aihay/api... --ignore-script
 
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/models.yaml ./apps/api/models.yaml
+COPY --from=build /app/apps/api/migrations ./apps/api/migrations
 
 WORKDIR /app/apps/api
 EXPOSE 3000

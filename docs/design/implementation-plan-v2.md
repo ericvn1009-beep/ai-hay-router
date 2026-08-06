@@ -4,7 +4,7 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V2) |
-| **Status** | In progress — **V2.0 observability implemented in code** (`v0.2.0`) |
+| **Status** | In progress — V2.0 + **V2.1 tenancy** done (`v0.2.1`); next **V2.2 control plane API** |
 | **Last updated** | 2026-08-06 |
 | **Based on** | [Architecture V2](./architecture-v2.md) · [Architecture V1](./architecture-v1.md) · [Product Spec](./product-spec.md) |
 | **Baseline code** | `apps/api` V1 gateway (Compose, keys, metering, OpenAI/Anthropic/xAI) |
@@ -256,11 +256,12 @@ docker compose logs api 2>&1 | grep request_complete
 
 #### Acceptance criteria
 
-- [ ] Fresh install and upgraded V1 DB both work.  
-- [ ] Existing `sk-aihay-…` keys still authenticate.  
-- [ ] Cross-tenant isolation tests pass.  
-- [ ] Memory store either supports multi-workspace stubs or is documented as single-tenant-only for tests.  
-- [ ] Tag **`v0.2.1`**.
+- [x] Fresh install and upgraded V1 DB both work (ordered SQL migrations + bootstrap).  
+- [x] Existing `sk-aihay-…` keys still authenticate.  
+- [x] Cross-tenant isolation tests pass (memory multi-workspace).  
+- [x] Memory store supports multi-workspace (createWorkspace / scoped list/revoke).  
+- [x] CLI `--workspace` + `keys workspaces` / `workspace-create`.  
+- [x] Tag **`v0.2.1`** (package version).
 
 ---
 

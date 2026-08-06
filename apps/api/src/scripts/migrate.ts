@@ -8,8 +8,12 @@ async function main() {
     process.exit(1);
   }
   const pool = await createPgPool(config.DATABASE_URL);
-  await migrate(pool);
-  console.log("migrate ok");
+  const applied = await migrate(pool);
+  console.log(
+    applied.length
+      ? `migrate ok; applied: ${applied.join(", ")}`
+      : "migrate ok; already up to date",
+  );
   await pool.end();
 }
 

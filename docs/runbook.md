@@ -158,11 +158,28 @@ pnpm keys create --name compose-dev
 # Copy sk-aihay-… once; only the hash is stored
 ```
 
-**Migrate only** (API also migrates on boot when using Postgres):
+**Migrate only** (API also runs ordered migrations on boot when using Postgres):
 
 ```bash
 DATABASE_URL=postgres://aihay:aihay@localhost:5432/aihay pnpm migrate
+# applies apps/api/migrations/*.sql once each (tracked in schema_migrations)
 ```
+
+### Upgrade V1 → V2.1 (tenancy)
+
+1. Deploy code ≥ `0.2.1` and restart API (or `pnpm migrate` with `DATABASE_URL`).
+2. Migrations `001_v1_base.sql` + `002_v2_tenancy.sql` create orgs/users/memberships and backfill `workspaces.organization_id` + `usage_events.organization_id`.
+3. Existing `sk-aihay-…` keys keep working (same hash table).
+4. Optional multi-workspace via CLI:
+
+```bash
+pnpm keys workspace-create --name team-b
+pnpm keys workspaces
+pnpm keys create --name app --workspace <workspace-uuid>
+pnpm keys list --workspace <workspace-uuid>
+```
+
+Memory store supports multi-workspace for tests/dev; durable multi-workspace needs Postgres.
 
 **Stop**
 

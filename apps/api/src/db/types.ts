@@ -1,3 +1,27 @@
+export type MembershipRole = "owner" | "admin" | "member" | "viewer";
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: Date;
+}
+
+export interface Workspace {
+  id: string;
+  organizationId: string | null;
+  name: string;
+  slug: string | null;
+  createdAt: Date;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  createdAt: Date;
+}
+
 export interface ApiKeyRecord {
   id: string;
   workspaceId: string;
@@ -7,12 +31,16 @@ export interface ApiKeyRecord {
   rateLimitRpm: number | null;
   dailyTokenLimit: number | null;
   dailyCostUsdLimit: number | null;
+  createdByUserId: string | null;
   revokedAt: Date | null;
   createdAt: Date;
 }
 
 export interface CreateKeyInput {
   name: string;
+  /** Target workspace; default workspace if omitted */
+  workspaceId?: string;
+  createdByUserId?: string | null;
   rateLimitRpm?: number | null;
   dailyTokenLimit?: number | null;
   dailyCostUsdLimit?: number | null;
@@ -28,6 +56,7 @@ export interface UsageEventInput {
   requestId: string;
   apiKeyId: string;
   workspaceId: string;
+  organizationId?: string | null;
   modelRequested: string;
   modelUsed: string;
   provider: string;
@@ -44,13 +73,25 @@ export interface UsageEventInput {
 }
 
 export interface KeyStore {
+  /** Ensure default org + workspace exist; return default workspace id */
   ensureDefaultWorkspace(): Promise<string>;
+  /** Full tenancy bootstrap (default org/workspace) */
+  ensureTenancyBootstrap(): Promise<{ organizationId: string; workspaceId: string }>;
+  createWorkspace(opts: {
+    name: string;
+    organizationId?: string;
+    slug?: string;
+  }): Promise<Workspace>;
+  listWorkspaces(organizationId?: string): Promise<Workspace[]>;
+  getWorkspace(workspaceId: string): Promise<Workspace | null>;
   createKey(input: CreateKeyInput): Promise<CreateKeyResult>;
-  listKeys(): Promise<ApiKeyRecord[]>;
-  revokeByPrefix(prefix: string): Promise<boolean>;
+  listKeys(opts?: { workspaceId?: string }): Promise<ApiKeyRecord[]>;
+  revokeByPrefix(prefix: string, opts?: { workspaceId?: string }): Promise<boolean>;
   findByHash(keyHash: string): Promise<ApiKeyRecord | null>;
 }
 
 export interface UsageStore {
   insert(event: UsageEventInput): Promise<void>;
+  /** Workspace-scoped list for isolation tests / control plane prep */
+  listByWorkspace(workspaceId: string, limit?: number): Promise<UsageEventInput[]>;
 }

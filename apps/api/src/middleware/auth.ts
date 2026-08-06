@@ -43,6 +43,7 @@ export function createAuthMiddleware(env: AuthEnv) {
         rateLimitRpm: env.defaultRpm,
         dailyTokenLimit: null,
         dailyCostUsdLimit: null,
+        createdByUserId: null,
         revokedAt: null,
         createdAt: new Date(),
       };

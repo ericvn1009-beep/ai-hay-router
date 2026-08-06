@@ -1,40 +1,8 @@
--- AI Hay Router schema reference (authoritative ordered migrations live in apps/api/migrations/)
--- Applied via runMigrations(); this file documents the current shape.
-
-CREATE TABLE IF NOT EXISTS schema_migrations (
-  id TEXT PRIMARY KEY,
-  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS organizations (
-  id UUID PRIMARY KEY,
-  name TEXT NOT NULL,
-  slug TEXT NOT NULL UNIQUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY,
-  email TEXT NOT NULL UNIQUE,
-  name TEXT NULL,
-  password_hash TEXT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS memberships (
-  id UUID PRIMARY KEY,
-  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role TEXT NOT NULL DEFAULT 'member',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (organization_id, user_id)
-);
+-- V1 base schema (idempotent)
 
 CREATE TABLE IF NOT EXISTS workspaces (
   id UUID PRIMARY KEY,
   name TEXT NOT NULL,
-  organization_id UUID REFERENCES organizations(id),
-  slug TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -47,17 +15,18 @@ CREATE TABLE IF NOT EXISTS api_keys (
   rate_limit_rpm INT NULL,
   daily_token_limit BIGINT NULL,
   daily_cost_usd_limit NUMERIC NULL,
-  created_by_user_id UUID REFERENCES users(id),
   revoked_at TIMESTAMPTZ NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS api_keys_prefix_idx ON api_keys (key_prefix);
+CREATE INDEX IF NOT EXISTS api_keys_workspace_idx ON api_keys (workspace_id);
 
 CREATE TABLE IF NOT EXISTS usage_events (
   id UUID PRIMARY KEY,
   request_id TEXT NOT NULL,
   api_key_id UUID NOT NULL REFERENCES api_keys(id),
   workspace_id UUID NOT NULL REFERENCES workspaces(id),
-  organization_id UUID REFERENCES organizations(id),
   model_requested TEXT NOT NULL,
   model_used TEXT NOT NULL,
   provider TEXT NOT NULL,
@@ -73,3 +42,10 @@ CREATE TABLE IF NOT EXISTS usage_events (
   attempt_count INT NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS usage_events_workspace_created_idx
+  ON usage_events (workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS usage_events_key_created_idx
+  ON usage_events (api_key_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS usage_events_request_id_idx
+  ON usage_events (request_id);
