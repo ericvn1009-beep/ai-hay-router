@@ -27,6 +27,7 @@ logger.info("aihay_starting", {
   store: stores.driver,
   openai_configured: Boolean(config.OPENAI_API_KEY),
   anthropic_configured: Boolean(config.ANTHROPIC_API_KEY),
+  xai_configured: Boolean(config.XAI_API_KEY),
 });
 
 const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {

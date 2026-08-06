@@ -4,9 +4,11 @@
  * Usage:
  *   pnpm spike:chat --provider openai --model gpt-4o-mini
  *   pnpm spike:chat --provider anthropic --model claude-3-5-haiku-latest
+ *   pnpm spike:chat --provider xai --model grok-4.5
  */
 import { createAnthropicAdapter } from "../providers/anthropic/index.js";
 import { createOpenAIAdapter } from "../providers/openai/index.js";
+import { createXaiAdapter } from "../providers/xai/index.js";
 import type { ChatAdapter } from "../providers/types.js";
 import type { NormalizedChatRequest } from "../types/chat.js";
 
@@ -21,7 +23,11 @@ async function main() {
   const provider = arg("provider", "openai");
   const model = arg(
     "model",
-    provider === "anthropic" ? "claude-3-5-haiku-latest" : "gpt-4o-mini",
+    provider === "anthropic"
+      ? "claude-3-5-haiku-latest"
+      : provider === "xai" || provider === "grok"
+        ? "grok-4.5"
+        : "gpt-4o-mini",
   );
   const prompt = arg("prompt", "Say hello in one short sentence.");
 
@@ -36,6 +42,10 @@ async function main() {
     apiKey = process.env.ANTHROPIC_API_KEY ?? "";
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required");
     adapter = createAnthropicAdapter({ apiKey });
+  } else if (provider === "xai" || provider === "grok") {
+    apiKey = process.env.XAI_API_KEY ?? "";
+    if (!apiKey) throw new Error("XAI_API_KEY is required");
+    adapter = createXaiAdapter({ apiKey });
   } else {
     throw new Error(`Unknown provider: ${provider}`);
   }

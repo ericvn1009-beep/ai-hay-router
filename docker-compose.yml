@@ -15,6 +15,7 @@ services:
       AIHAY_DEV_KEY: ${AIHAY_DEV_KEY:-sk-aihay-dev-local}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
       DEFAULT_MAX_TOKENS: "4096"
       DEFAULT_RPM: "60"
     depends_on:

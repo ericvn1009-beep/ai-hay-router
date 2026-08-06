@@ -181,7 +181,8 @@ function withCredential(
   apiKey: string,
 ): Record<string, string> {
   const h = { ...headers };
-  if (adapterId === "openai") {
+  // OpenAI-compatible (OpenAI, xAI/Grok)
+  if (adapterId === "openai" || adapterId === "xai") {
     h.authorization = `Bearer ${apiKey}`;
   } else if (adapterId === "anthropic") {
     h["x-api-key"] = apiKey;

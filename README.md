@@ -2,7 +2,7 @@
 
 **AI Hay Router** — OpenAI-compatible multi-model gateway (TypeScript / Hono).
 
-One API key → OpenAI + Anthropic, streaming, model fallbacks, usage metering.
+One API key → **OpenAI + Anthropic (Claude) + xAI (Grok)**, streaming, model fallbacks, usage metering.
 
 ## Status (V1)
 
@@ -21,7 +21,7 @@ One API key → OpenAI + Anthropic, streaming, model fallbacks, usage metering.
 # Node 22+ and pnpm
 pnpm install
 cp .env.example .env
-# optional: OPENAI_API_KEY / ANTHROPIC_API_KEY for live chat
+# optional: OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY for live chat
 
 pnpm test
 pnpm dev
@@ -59,7 +59,20 @@ const stream = await client.chat.completions.create({
 ```bash
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
+export XAI_API_KEY=xai-...
 docker compose up --build
+```
+
+### Models (seed)
+
+| AI Hay id | Provider |
+| --- | --- |
+| `openai/gpt-4o-mini`, `openai/gpt-4o` | OpenAI |
+| `anthropic/claude-3-5-haiku-latest`, `anthropic/claude-sonnet-4-0` | Anthropic |
+| `xai/grok-4.5`, `xai/grok-3`, `xai/grok-3-mini` | xAI Grok |
+
+```bash
+pnpm spike:chat --provider xai --model grok-4.5
 ```
 
 Then create a durable key against the API container (or run CLI with `DATABASE_URL`):

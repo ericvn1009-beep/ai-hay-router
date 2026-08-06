@@ -63,3 +63,52 @@ models:
         credential_ref: ANTHROPIC_API_KEY
         priority: 1
     fallback_models: []
+
+  # xAI Grok (OpenAI-compatible Chat Completions at https://api.x.ai/v1)
+  - id: xai/grok-4.5
+    provider: xai
+    upstream_id: grok-4.5
+    context_length: 256000
+    supports_tools: false
+    supports_streaming: true
+    input_price_per_mtok: 3
+    output_price_per_mtok: 15
+    active: true
+    endpoints:
+      - id: xai-primary
+        base_url: https://api.x.ai/v1
+        credential_ref: XAI_API_KEY
+        priority: 1
+    fallback_models: []
+
+  - id: xai/grok-3
+    provider: xai
+    upstream_id: grok-3
+    context_length: 131072
+    supports_tools: false
+    supports_streaming: true
+    input_price_per_mtok: 3
+    output_price_per_mtok: 15
+    active: true
+    endpoints:
+      - id: xai-primary
+        base_url: https://api.x.ai/v1
+        credential_ref: XAI_API_KEY
+        priority: 1
+    fallback_models: []
+
+  - id: xai/grok-3-mini
+    provider: xai
+    upstream_id: grok-3-mini
+    context_length: 131072
+    supports_tools: false
+    supports_streaming: true
+    input_price_per_mtok: 0.3
+    output_price_per_mtok: 0.5
+    active: true
+    endpoints:
+      - id: xai-primary
+        base_url: https://api.x.ai/v1
+        credential_ref: XAI_API_KEY
+        priority: 1
+    fallback_models: []

@@ -3,6 +3,7 @@ import { openaiError } from "../lib/errors.js";
 import type { Logger } from "../lib/logger.js";
 import { createAnthropicAdapter } from "../providers/anthropic/index.js";
 import { createOpenAIAdapter } from "../providers/openai/index.js";
+import { createXaiAdapter } from "../providers/xai/index.js";
 import type { ChatAdapter, ProviderError } from "../providers/types.js";
 import { isRetriable } from "../providers/types.js";
 import { resolveModel } from "../registry/resolve.js";
@@ -232,6 +233,7 @@ export async function handleChatStream(
 function credentialFor(ref: string, config: AppConfig): string {
   if (ref === "OPENAI_API_KEY") return config.OPENAI_API_KEY;
   if (ref === "ANTHROPIC_API_KEY") return config.ANTHROPIC_API_KEY;
+  if (ref === "XAI_API_KEY") return config.XAI_API_KEY;
   return process.env[ref] ?? "";
 }
 
@@ -241,6 +243,9 @@ function adapterFor(provider: string, apiKey: string, baseUrl: string): ChatAdap
   }
   if (provider === "anthropic") {
     return createAnthropicAdapter({ apiKey, baseUrl });
+  }
+  if (provider === "xai" || provider === "grok") {
+    return createXaiAdapter({ apiKey, baseUrl });
   }
   return null;
 }

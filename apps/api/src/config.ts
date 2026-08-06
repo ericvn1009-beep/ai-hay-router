@@ -12,6 +12,8 @@ const envSchema = z.object({
   STORE_DRIVER: z.enum(["memory", "postgres", "auto"]).default("auto"),
   OPENAI_API_KEY: z.string().optional().default(""),
   ANTHROPIC_API_KEY: z.string().optional().default(""),
+  /** xAI Grok platform key */
+  XAI_API_KEY: z.string().optional().default(""),
   REQUEST_TIMEOUT_MS: z.coerce.number().default(120_000),
   DEFAULT_MAX_TOKENS: z.coerce.number().default(4096),
   MAX_ATTEMPTS: z.coerce.number().default(3),

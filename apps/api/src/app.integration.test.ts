@@ -25,6 +25,7 @@ function testApp() {
     MAX_ATTEMPTS: 3,
     OPENAI_API_KEY: "",
     ANTHROPIC_API_KEY: "",
+    XAI_API_KEY: "",
     DATABASE_URL: "",
     REDIS_URL: "",
     STORE_DRIVER: "memory" as const,
