@@ -942,6 +942,7 @@ V1 metering is **billing-ready**, not billing-complete. Research on OpenRouterâ€
 | [Product Specification](./product-spec.md) | *What* and *why* |
 | **This document** | *How* V1 is structured |
 | [Architecture V2](./architecture-v2.md) | *How* productization / multi-tenant evolves after V1 |
+| [Scalability](./scalability.md) | *How* we scale RPS, streams, regions |
 | [Implementation Plan (V1)](./implementation-plan-v1.md) | *How* we execute (phases, tasks, DoD) |
 | [How to Build](../how-to-build-ai-model-router.md) | Implementation sequence |
 | [Router vs Gateway](../router-vs-gateway.md) | Concept split |

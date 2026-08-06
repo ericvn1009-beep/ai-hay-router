@@ -543,6 +543,7 @@ Directional; each phase should be shippable.
 | [Product Spec](./product-spec.md) | Product scope; update when V2 features lock |
 | [Implementation Plan V1](./implementation-plan-v1.md) | V1 execution (mostly complete) |
 | [Implementation Plan V2](./implementation-plan-v2.md) | V2.0–V2.7 tasks, flags, DoD |
+| [Scalability](./scalability.md) | RPS stages, edge/multi-region, hot-path split |
 | [Runbook](../runbook.md) | Ops today; extend for metrics/dashboard |
 
 ---

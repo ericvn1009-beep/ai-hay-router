@@ -117,6 +117,7 @@ pnpm spike:chat --provider openai --model gpt-4o-mini
 | [Product Spec](./docs/design/product-spec.md) | What / why |
 | [Architecture V1](./docs/design/architecture-v1.md) | System design (as-built gateway) |
 | [Architecture V2](./docs/design/architecture-v2.md) | Productization target (tenancy, ops, commercial) |
+| [Scalability](./docs/design/scalability.md) | Scale stages, RPS vs streams, multi-region / hyperscale |
 | [Implementation Plan V1](./docs/design/implementation-plan-v1.md) | V1 phases + layout + testing |
 | [Implementation Plan V2](./docs/design/implementation-plan-v2.md) | V2.0–V2.7 execution plan |
 | [Runbook](./docs/runbook.md) | Operate and debug V1 |
