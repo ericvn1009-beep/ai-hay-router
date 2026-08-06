@@ -13,22 +13,20 @@ FROM deps AS build
 COPY apps/web apps/web
 RUN pnpm --filter @aihay/web build
 
-FROM base AS runner
+# Standalone server — no next.config.ts / TypeScript needed at runtime
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
+ENV HOSTNAME=0.0.0.0
 ENV AIHAY_API_URL=http://api:3000
+ENV NEXT_TELEMETRY_DISABLED=1
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
-COPY apps/web/package.json apps/web/
-RUN pnpm install --filter @aihay/web... --prod --ignore-scripts \
-  || pnpm install --filter @aihay/web... --ignore-scripts
-
-COPY --from=build /app/apps/web/.next ./apps/web/.next
+# Monorepo standalone layout: .next/standalone contains apps/web/server.js
+COPY --from=build /app/apps/web/.next/standalone ./
+COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/web/public ./apps/web/public
-COPY --from=build /app/apps/web/next.config.ts ./apps/web/next.config.ts
-COPY --from=build /app/apps/web/package.json ./apps/web/package.json
 
 WORKDIR /app/apps/web
 EXPOSE 3001
-CMD ["pnpm", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3001"]
+CMD ["node", "server.js"]
