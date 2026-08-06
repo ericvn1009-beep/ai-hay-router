@@ -6,6 +6,7 @@ Research and notes on AI model routers, OpenRouter, and building a unified multi
 
 - [AI Hay Router — Product Specification](./docs/design/product-spec.md)
 - [AI Hay Router — Architecture Design (V1)](./docs/design/architecture-v1.md)
+- [AI Hay Router — Implementation Plan (V1)](./docs/design/implementation-plan-v1.md)
 
 ## Business
 

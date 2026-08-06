@@ -498,6 +498,7 @@ Decide explicitly before public launch:
 | --- | --- |
 | **This product spec** | What we build and why |
 | [Architecture Design (V1)](./architecture-v1.md) | How V1 is structured (pipeline, data, deploy) |
+| [Implementation Plan (V1)](./implementation-plan-v1.md) | How we execute V1 (phases, tasks, DoD) |
 | [How to Build](../how-to-build-ai-model-router.md) | Engineering start guide |
 | [Router vs Gateway](../router-vs-gateway.md) | Concept clarity |
 | [Language comparison](../language-technology-comparison.md) | Why TypeScript |
