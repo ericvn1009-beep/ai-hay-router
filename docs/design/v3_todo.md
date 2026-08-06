@@ -6,7 +6,7 @@
 | **Document type** | Forward backlog (V3) |
 | **Status** | Open — not scheduled |
 | **Baseline** | Shipped product **`v0.7.0`** (gateway + tenant control plane + thin dashboard) |
-| **Last updated** | 2026-08-06 (API Keys usage guide added) |
+| **Last updated** | 2026-08-06 (Keys guide + Models page backlog) |
 | **Related** | [Runbook](../runbook.md) · [Architecture](./architecture-v2.md) · [README](../../README.md) |
 
 Work **not** in the current product surface. Order below is intentional priority for planning; nothing here is committed until an implementation plan is cut.
@@ -119,7 +119,25 @@ Deferred product: learned or eval-linked routing. Do **not** start until meterin
 
 - [ ] New user can create a key and complete a first successful chat call using only the Keys page guide (no external docs required)  
 
-### 4.2 Other tenant UI polish
+### 4.2 Models page — list available models for API keys
+
+**Gap:** Dashboard has no catalog of models clients can call with workspace API keys; users must hit `GET /v1/models` or read docs.
+
+- [ ] Add dashboard **Models** page (`/models`) in nav (Keys · Models · Usage · …)  
+- [ ] List all models available to data-plane API keys (same surface as `GET /v1/models`)  
+- [ ] Show **aliases** (`aihay/*`) with `resolves_to` / root target  
+- [ ] Show **canonical** models with provider / `owned_by`  
+- [ ] Display capability hints when available (tools, vision, streaming) — may need richer control or public catalog API beyond OpenAI list shape  
+- [ ] Copy model id for use in `model:` field  
+- [ ] Short note: use with Bearer API key against data plane base URL (cross-link Keys page guide)  
+- [ ] Auth: session-only for dashboard; do not require a user to paste their `sk-aihay-…` to view the catalog  
+
+**Acceptance (draft)**
+
+- [ ] Logged-in user can open Models and see every active registry id + alias without calling the data plane with an API key  
+- [ ] Catalog matches `GET /v1/models` for the same deployment flags (e.g. aliases on/off)  
+
+### 4.3 Other tenant UI polish
 
 - [ ] Tenant UI: budgets form, members/invites, audit page, workspace switcher  
 - [ ] Stripe Checkout (or equivalent) for self-serve credit top-up  
