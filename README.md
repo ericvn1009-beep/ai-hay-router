@@ -1,12 +1,26 @@
 # ai-hay-router
 
-Research and notes on AI model routers, OpenRouter, and building a unified multi-model API.
+**AI Hay Router** — a unified multi-model LLM API (gateway + simple routing).  
+V1 target: OpenAI-compatible chat, CLI-issued keys, OpenAI + Anthropic adapters, metering, model fallbacks, Docker Compose self-host.
 
-## Design
+> Design docs are **ready to build**. Application code is not started yet; follow the implementation plan.
 
-- [AI Hay Router — Product Specification](./docs/design/product-spec.md)
-- [AI Hay Router — Architecture Design (V1)](./docs/design/architecture-v1.md)
-- [AI Hay Router — Implementation Plan (V1)](./docs/design/implementation-plan-v1.md)
+## Design (start here)
+
+| Doc | Role |
+| --- | --- |
+| [Product Specification](./docs/design/product-spec.md) | What we build and why |
+| [Architecture Design (V1)](./docs/design/architecture-v1.md) | How the system is structured |
+| [Implementation Plan (V1)](./docs/design/implementation-plan-v1.md) | Phases, tasks, DoD → tag `v0.1.0` |
+
+### V1 decisions (locked)
+
+- **Self-host** Docker Compose (no multi-tenant signup)
+- **CLI API keys** only (`sk-aihay-…`); no user accounts
+- **Hono** + TypeScript + Node 22 + Postgres + Redis
+- **Text chat** first; tools/vision out of DoD
+- **Model fallback** for reliability; stream failover **pre-first-byte only**
+- **Meter** every terminal request; billing later
 
 ## Business
 
@@ -15,7 +29,7 @@ Research and notes on AI model routers, OpenRouter, and building a unified multi
 - [Google Gemini Enterprise Deals as COGS](./docs/business/google-enterprise-cogs-deals.md)
 - [How OpenRouter Handles COGS & Commercial Model](./docs/business/openrouter-cogs-commercial-model.md)
 
-## Docs
+## Research
 
 - [AI Model Routers Research Brief (2026)](./docs/ai-model-routers-2026.md)
 - [How to Build Your Own AI Model Router](./docs/how-to-build-ai-model-router.md)

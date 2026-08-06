@@ -5,9 +5,10 @@
 | **Product name** | AI Hay Router |
 | **Repo** | [ai-hay-router](https://github.com/ericvn1009-beep/ai-hay-router) |
 | **Document type** | Product specification (v0.1) |
-| **Status** | Draft |
-| **Last updated** | 2026-07-27 |
-| **Primary language** | TypeScript (Node.js / Bun runtime) |
+| **Status** | Ready to build (synced with Architecture + Implementation Plan) |
+| **Last updated** | 2026-08-05 |
+| **Primary language** | TypeScript (Node.js 22+; Bun optional later) |
+| **Companions** | [Architecture V1](./architecture-v1.md) · [Implementation Plan V1](./implementation-plan-v1.md) |
 
 ---
 
@@ -53,13 +54,14 @@ Existing options force tradeoffs:
 
 ### 3.1 Goals (v1)
 
-1. **Unified OpenAI-compatible API** for chat completions (stream + non-stream).
-2. **Multi-provider access** through a single developer API key.
-3. **Model registry** with stable IDs (`provider/model` or AI Hay aliases).
-4. **Reliability basics:** timeouts, retries, provider failover, optional model fallback list.
+1. **Unified OpenAI-compatible API** for chat completions (stream + non-stream), **text chat first**.
+2. **Multi-provider access** through a single developer API key (CLI-issued; no signup in V1).
+3. **Model registry** with stable canonical IDs (`provider/model`). Aliases are optional later.
+4. **Reliability basics:** timeouts, retries, optional multi-endpoint failover, **model fallback** lists.
 5. **Usage metering:** tokens, estimated cost, latency, which model/provider served the request.
-6. **Developer DX:** drop-in OpenAI SDK via `baseURL`, clear errors, docs, playground-quality examples.
+6. **Developer DX:** drop-in OpenAI SDK via `baseURL`, clear errors, docs + examples.
 7. **Ship in TypeScript** for shared types across API, SDK, and future dashboard.
+8. **Self-host MVP:** Docker Compose deploy is the primary V1 distribution.
 
 ### 3.2 Non-goals (v1)
 
@@ -67,6 +69,10 @@ Existing options force tradeoffs:
 | --- | --- |
 | 100+ providers on day one | Adapter quality over catalog vanity |
 | Learned/auto model router (SOTA) | Needs evals + traffic; Phase 3 |
+| User signup / accounts / OAuth | Self-host V1 uses CLI-issued API keys only; accounts are Phase 2 (managed multi-tenant) |
+| Dashboard UI | Phase 2 |
+| Billing / credits / Stripe | Meter first; bill later |
+| Tools, vision, multimodal as V1 DoD | Text chat only; reject unsupported parts with clear 400 (stretch: OpenAI tools passthrough) |
 | Full enterprise SIEM / complex RBAC | Phase 2+ |
 | Training or hosting foundation models | AI Hay is orchestration, not a lab |
 | Guaranteed identical quality across hosts of “the same” model | Document variance; allow ignore/only later |
@@ -103,12 +109,13 @@ Existing options force tradeoffs:
 
 - Building chatbots, coding agents, internal tools.
 - Wants OpenAI SDK drop-in and ability to switch models by string.
-- Cares about: latency, cost, uptime, simple billing.
+- Cares about: latency, cost, uptime; billing only when using managed cloud later.
 
-### 5.2 Secondary: Startup platform engineer
+### 5.2 Secondary: Startup platform engineer / operator
 
-- Needs one key for the company, spend visibility, env separation (dev/prod).
-- Cares about: rate limits, logs, fallbacks, self-host option later.
+- Deploys AI Hay (Compose), mints keys via CLI, sets provider env secrets.
+- Needs spend visibility via usage ledger, env separation (dev/prod keys), logs, fallbacks.
+- Cares about: rate limits, revoke, self-host ops.
 
 ### 5.3 Future: Team admin (Phase 2)
 
@@ -138,11 +145,13 @@ AI Hay is both a **gateway you call** and a **router that chooses provider endpo
 
 | Mode | Description | Phase |
 | --- | --- | --- |
-| **Managed cloud** | AI Hay-hosted API + credits or usage billing | 1–2 |
+| **Self-host MVP** | Docker Compose; platform provider keys in env; CLI API keys | **1 (V1)** |
+| **Single-tenant managed** | AI Hay operates one stack for a customer; still no public signup | 1–2 |
+| **Managed multi-tenant cloud** | Public signup, credits/billing, dashboard | 2 |
 | **BYOK** | Customer provider keys; AI Hay fee for routing/control plane | 2 |
-| **Self-host** | Docker / compose in customer VPC | 2–3 |
+| **Hardened self-host product** | Polished docs, HA recipes, optional air-gap | 2–3 |
 
-v1 can start as **self-host MVP** or **single-tenant managed** without full marketplace billing.
+**V1 primary distribution:** self-host Docker Compose. No multi-tenant account system in V1.
 
 ---
 
@@ -152,31 +161,36 @@ v1 can start as **self-host MVP** or **single-tenant managed** without full mark
 
 | Feature | Description |
 | --- | --- |
-| **Chat Completions API** | `POST /v1/chat/completions` OpenAI-compatible |
+| **Chat Completions API** | `POST /v1/chat/completions` OpenAI-compatible (**text chat**) |
 | **Streaming** | SSE (`stream: true`), stream-through proxy |
 | **Models list** | `GET /v1/models` |
-| **API keys** | Bearer `sk-...` issued by AI Hay |
-| **Model registry** | Config/DB map: AI Hay model id → provider + upstream id + pricing |
-| **≥ 2 provider adapters** | e.g. OpenAI + Anthropic |
-| **Provider failover** | On 5xx / timeout / rate limit, try next endpoint when configured |
-| **Model fallbacks** | Optional `models: []` or config chain |
+| **API keys** | Bearer `sk-aihay-...`; **CLI mint/list/revoke** (no signup UI) |
+| **Model registry** | Config/YAML: canonical id → provider + upstream id + pricing |
+| **≥ 2 provider adapters** | OpenAI + Anthropic |
+| **Model fallbacks** | Primary reliability path: `models: []` or registry `fallback_models` |
+| **Provider multi-endpoint** | Structure for ordered endpoints / secondary keys (demo if configured) |
+| **Basic rate limits** | Per-key RPM (abuse floor) |
+| **Spend floor** | Default/clamp `max_tokens`; optional per-key daily token or $ soft cap |
 | **Usage ledger** | request id, key, model, provider, tokens, $ estimate, latency, status |
 | **Error normalization** | OpenAI-like error JSON where practical |
-| **Health endpoint** | Liveness/readiness for deploy |
+| **Health endpoints** | `GET /health` (liveness), `GET /ready` (deps) |
+| **Docker Compose** | api + Postgres + Redis |
 
 ### 7.2 Should-have (Phase 2)
 
 | Feature | Description |
 | --- | --- |
 | **Dashboard** | Keys, usage charts, recent requests |
-| **Rate limits & budgets** | Per key / per workspace |
+| **User accounts / signup** | Email/OAuth, sessions for managed multi-tenant |
+| **Budgets & spend policies** | Per key / workspace hard/soft $ caps (beyond V1 floor) |
 | **Credits or Stripe billing** | Prepaid or usage-based |
 | **BYOK** | Customer provider credentials |
 | **Semantic or exact cache** | Optional, workload-dependent |
-| **Virtual models** | `aihay/cheap`, `aihay/balanced`, `aihay/auto` (rules-based first) |
-| **Guardrails** | Max tokens, basic blocklists, optional PII hooks |
+| **Virtual models / aliases** | `aihay/cheap`, `aihay/balanced`, `aihay/auto` (rules-based first) |
+| **Guardrails** | Blocklists, optional PII hooks |
 | **Third provider** | Gemini and/or Groq / Together |
-| **Organizations** | Workspaces, multiple keys |
+| **Organizations** | Multi-workspace, invites, roles |
+| **Tools / vision (productized)** | Full multi-provider tool + multimodal support |
 
 ### 7.3 Could-have (Phase 3)
 
@@ -199,9 +213,10 @@ v1 can start as **self-host MVP** or **single-tenant managed** without full mark
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/v1/chat/completions` | Chat (stream + non-stream) |
+| `POST` | `/v1/chat/completions` | Chat (stream + non-stream), text |
 | `GET` | `/v1/models` | List available models |
-| `GET` | `/health` | Health check |
+| `GET` | `/health` | Liveness |
+| `GET` | `/ready` | Readiness (DB / critical deps) |
 
 Later: `/v1/embeddings`, `/v1/responses` (if aligning with newer OpenAI shapes), management APIs for keys.
 
@@ -223,17 +238,20 @@ const client = new OpenAI({
 
 ### 8.3 Model ID scheme
 
-| Pattern | Example | Notes |
+| Pattern | Example | V1 |
 | --- | --- | --- |
-| Canonical | `openai/gpt-4o-mini` | Clear provider ownership |
-| Alias | `aihay/cheap` | Resolved via registry policy |
-| Future auto | `aihay/auto` | Phase 3 |
+| Canonical | `openai/gpt-4o-mini` | **Required** — registry key |
+| Canonical | `anthropic/claude-…` | **Required** |
+| Alias | `aihay/cheap` | **Out of V1 DoD** (Phase 2) |
+| Auto | `aihay/auto` | Phase 3 — return clear 400 if requested in V1 |
 
 ### 8.4 Auth
 
 - `Authorization: Bearer sk-aihay-...`
-- Keys hashed at rest; show secret only once at creation.
-- Phase 2: key-level limits, workspace scoping.
+- Keys **created via CLI** (or admin script); secret shown only once; **hash at rest** (HMAC-SHA256 + server pepper).
+- No user accounts, email, or password in V1.
+- V1: per-key RPM + spend floor (max_tokens / optional daily cap).
+- Phase 2: signup, dashboard key UI, workspace scoping, budgets UI.
 
 ### 8.5 Streaming requirements
 
@@ -241,6 +259,16 @@ const client = new OpenAI({
 - **No** full-response buffering before first byte to client.
 - Propagate client disconnect / abort to upstream when possible.
 - Include usage on final chunk when upstream provides it (or estimate).
+
+### 8.6 Content surface (V1)
+
+| Capability | V1 |
+| --- | --- |
+| Text messages | Supported |
+| Streaming | Supported |
+| Tools / function calling | **Out of DoD** (reject or document as non-goal); optional OpenAI-only stretch |
+| Vision / image parts | **Out** — clear 400 |
+| JSON mode / `response_format` | Passthrough if easy; else document unsupported |
 
 ---
 
@@ -258,17 +286,27 @@ Request
 
 ### 9.2 v1 routing policy (deliberately simple)
 
-1. Resolve `model` (or alias) via **registry**.
-2. Select provider endpoint(s) from registry order.
-3. Call primary; on retriable failure → next provider or fallback model.
+1. Resolve `model` via **registry** (canonical id only for V1 DoD).
+2. Build attempt plan: ordered endpoints for that model, then optional **model fallback** list.
+3. Call attempts in order on retriable failure (5xx / timeout / 429).
 4. Log actual model/provider used.
 
-### 9.3 Explicit non-behavior (v1)
+**Primary reliability demo for V1:** model fallback (e.g. OpenAI model → Anthropic model), not multi-host copies of the same frontier model.
 
-- No silent quality-based model downgrade without user opt-in.
+### 9.3 Streaming and failover (locked)
+
+| Mode | Failover rule |
+| --- | --- |
+| **Non-stream** | Try attempts `1..N` until success or exhausted |
+| **Stream** | Try attempts only **until first successful upstream response is committed** to the client (before/at first client byte). **No** mid-stream model/provider switch. Mid-stream upstream death → terminal error + meter partial |
+
+### 9.4 Explicit non-behavior (v1)
+
+- No silent quality-based model downgrade without user opt-in (`models[]` / registry fallback only).
 - No training on customer prompts by default (product promise; implement retention policy in ops).
+- No transparent retry after the SSE stream has started.
 
-### 9.4 Future provider controls (Phase 3 alignment with market)
+### 9.5 Future provider controls (Phase 3 alignment with market)
 
 Inspired by OpenRouter-style controls (not all required at once):
 
@@ -289,7 +327,7 @@ Inspired by OpenRouter-style controls (not all required at once):
                            ▼
 ┌──────────────────────────────────────────────────────┐
 │ AI Hay Router (TypeScript)                           │
-│  Auth · rate limit · validate (Zod)                  │
+│  Auth · RPM / spend floor · validate (Zod)           │
 │  Model registry · router policy                      │
 │  Provider adapters · stream proxy                    │
 │  Usage enqueue · structured logs · traces            │
@@ -316,29 +354,30 @@ Inspired by OpenRouter-style controls (not all required at once):
 | Layer | Choice | Rationale |
 | --- | --- | --- |
 | Language | **TypeScript** | Product velocity, types, edge option; see language comparison |
-| Runtime | Node 22+ LTS or Bun | Stable async I/O |
-| Framework | Hono or Fastify | Fast HTTP + streaming |
+| Runtime | **Node 22+ LTS** (Bun optional later) | Stable async I/O |
+| Framework | **Hono** | Lightweight, streaming-friendly, edge-portable |
 | Validation | Zod | Runtime + type inference |
 | DB | Postgres | Keys, usage, registry |
-| Cache / limits | Redis | Rate limits, optional cache |
-| Deploy | Docker | Portable self-host / cloud |
+| Cache / limits | Redis | Rate limits, auth cache |
+| Deploy | **Docker Compose** | Primary V1 distribution |
 
-Details: [Language & Technology Comparison](../language-technology-comparison.md), [TypeScript Performance](../typescript-performance-ai-router.md).
+Details: [Architecture V1](./architecture-v1.md), [Language & Technology Comparison](../language-technology-comparison.md), [TypeScript Performance](../typescript-performance-ai-router.md).
 
 ---
 
 ## 11. Data model (minimum)
 
-### 11.1 Entities
+### 11.1 Entities (V1)
 
-| Entity | Key fields |
-| --- | --- |
-| **User / Workspace** | id, name, plan, created_at |
-| **ApiKey** | id, workspace_id, hash, prefix, name, rate_limit, revoked_at |
-| **Model** | id, provider, upstream_id, input_price, output_price, context_length, supports_tools, active |
-| **ProviderCredential** | provider, encrypted secret / platform key ref |
-| **UsageEvent** | id, api_key_id, model, provider, prompt_tokens, completion_tokens, cost_usd, latency_ms, status, error_code, created_at |
-| **RequestTrace** (optional v1) | request_id, route decisions, attempt list |
+| Entity | Key fields | V1 notes |
+| --- | --- | --- |
+| **Workspace** | id, name, created_at | Single default workspace; **no User table** |
+| **ApiKey** | id, workspace_id, hash, prefix, name, rate_limit_rpm, daily cap fields, revoked_at | CLI-issued identity |
+| **Model** | id, provider, upstream_id, prices, context_length, active | YAML registry OK; DB optional |
+| **ProviderCredential** | env refs in V1 | Platform `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
+| **UsageEvent** | request_id, api_key_id, models, provider, tokens, cost, latency, status, attempt_count | One row per **terminal request** |
+| **User** | — | **Phase 2** (managed cloud) |
+| **RequestTrace** (optional) | request_id, attempt list | No prompts |
 
 ### 11.2 Privacy defaults
 
@@ -392,20 +431,20 @@ Decide explicitly before public launch:
 
 ## 15. User journeys
 
-### 15.1 First successful call
+### 15.1 First successful call (V1)
 
-1. Developer signs up or runs self-host compose.
-2. Creates API key.
-3. Copies 5-line OpenAI SDK snippet with AI Hay `baseURL`.
-4. Calls `aihay`-listed model; receives streamed tokens.
-5. Sees usage in logs/dashboard (dashboard may be CLI/logs in MVP).
+1. Operator runs self-host Compose (`docker compose up`) with provider env keys.
+2. Mints API key via CLI: `pnpm aihay keys create --name local-dev` (no signup).
+3. Copies OpenAI SDK snippet with AI Hay `baseURL` + `AIHAY_API_KEY`.
+4. Calls a registry model (e.g. `openai/gpt-4o-mini`); receives streamed tokens.
+5. Sees usage in `usage_events` / structured logs (no dashboard in V1).
 
-### 15.2 Failover
+### 15.2 Failover / fallback
 
-1. Primary provider returns 503.
-2. AI Hay retries alternate provider for same logical model (if configured).
-3. Client receives successful completion; usage shows actual provider.
-4. No uncaught 500 if fallback succeeds.
+1. Primary attempt fails with retriable error **before** stream is committed (or on non-stream).
+2. AI Hay tries next endpoint and/or **fallback model** from plan.
+3. Client receives successful completion; usage shows **actual** model/provider.
+4. If failure is mid-stream after commit → error terminal (no silent model switch).
 
 ### 15.3 Model switch
 
@@ -419,11 +458,11 @@ Decide explicitly before public launch:
 
 | Surface | v1 bar |
 | --- | --- |
-| **Docs** | Quickstart, auth, models, streaming, errors, fallbacks |
-| **Error messages** | Actionable (invalid key, unknown model, upstream timeout) |
-| **Examples** | curl + TypeScript OpenAI SDK + Python OpenAI SDK |
+| **Docs** | Quickstart (Compose → CLI key → call), models, streaming, errors, fallbacks, privacy |
+| **Error messages** | Actionable (invalid key, unknown model, upstream timeout, unsupported content) |
+| **Examples** | curl + TypeScript OpenAI SDK (**required**); Python OpenAI SDK (**nice-to-have**) |
 | **Changelog** | Model add/remove and breaking API notes |
-| **Status** | Public status page later; `/health` now |
+| **Status** | `/health` + `/ready` now; public status page later |
 
 ---
 
@@ -436,16 +475,17 @@ Decide explicitly before public launch:
 
 ### Phase 1 — MVP (this spec’s core)
 
-- Stream + non-stream chat completions.
-- Registry, API keys, usage ledger.
-- Failover + model fallbacks.
-- Docker deploy + Quickstart docs.
+- Stream + non-stream **text** chat completions.
+- Registry, CLI API keys, usage ledger, basic RPM + spend floor.
+- Model fallbacks (+ multi-endpoint structure); pre-commit stream failover only.
+- Docker Compose + Quickstart docs.
+- Tag: **`v0.1.0`**.
 
 ### Phase 2 — Productization
 
-- Dashboard, billing/BYOK, rate limits, budgets.
-- Third provider, cache, virtual models.
-- Org/workspaces.
+- Dashboard, signup/accounts, billing/BYOK, budgets UI.
+- Third provider, cache, aliases / virtual models.
+- Org/workspaces; productized tools/vision.
 
 ### Phase 3 — Intelligence & enterprise
 
@@ -469,16 +509,31 @@ Decide explicitly before public launch:
 
 ---
 
-## 19. Open questions
+## 19. Decisions locked (V1) vs still open
+
+### 19.1 Locked for V1
+
+| # | Decision | Choice |
+| --- | --- | --- |
+| 1 | Distribution | Self-host Docker Compose primary |
+| 2 | Identity | ApiKey + default Workspace; CLI mint/revoke; **no signup** |
+| 3 | Framework | **Hono** + Node 22+ |
+| 4 | Rate limits | Basic per-key **RPM** in V1; budgets UI Phase 2 |
+| 5 | Aliases | Out of V1 DoD |
+| 6 | Content | Text chat; tools/vision out of DoD |
+| 7 | Failover | Pre-first-byte for stream; model fallback is primary demo |
+| 8 | Key hash | HMAC-SHA256 + server pepper |
+| 9 | First release tag | `v0.1.0` |
+
+### 19.2 Still open (do not block V1 build)
 
 | # | Question | Options | Owner |
 | --- | --- | --- | --- |
-| 1 | Managed cloud first vs self-host OSS first? | Cloud / OSS / both | Product |
+| 1 | Managed multi-tenant after MVP vs OSS packaging emphasis? | Cloud / OSS / both | Product |
 | 2 | Credit markup vs subscription vs BYOK-only? | See §13 | Product |
-| 3 | Hono (edge-ready) vs Fastify (Node-classic)? | Hono / Fastify | Eng |
-| 4 | Brand domain and public API hostname? | TBD | Product |
-| 5 | Open-source license for core? | MIT / Apache / BSL | Product/Legal |
-| 6 | Default model alias set (`aihay/cheap` etc.)? | Define in registry | Eng |
+| 3 | Brand domain and public API hostname? | TBD | Product |
+| 4 | Open-source license for core? | MIT / Apache / BSL | Product/Legal |
+| 5 | Default alias set when Phase 2 aliases ship? | Define in registry | Eng |
 
 ---
 
@@ -489,6 +544,10 @@ Decide explicitly before public launch:
 - [ ] No prompt storage by default  
 - [ ] No blocking full-body read on streaming path  
 - [ ] No multi-region complexity before single-region MVP is stable  
+- [ ] No user signup / dashboard / billing in V1 PRs  
+- [ ] No mid-stream model switch “failover”  
+- [ ] No tools/vision as required V1 DoD without explicit stretch approval  
+- [ ] No aliases required for V1 DoD  
 
 ---
 

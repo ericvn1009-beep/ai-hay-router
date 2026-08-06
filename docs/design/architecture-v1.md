@@ -4,10 +4,11 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Architecture design (V1) |
-| **Status** | Draft |
+| **Status** | Ready to build (synced with Product Spec + Implementation Plan) |
 | **Last updated** | 2026-08-05 |
-| **Companion** | [Product Specification](./product-spec.md) |
-| **Primary stack** | TypeScript · Hono · Postgres · Redis · Docker |
+| **Companions** | [Product Specification](./product-spec.md) · [Implementation Plan V1](./implementation-plan-v1.md) |
+| **Primary stack** | TypeScript · Hono · Postgres · Redis · Docker Compose |
+| **First release tag** | `v0.1.0` |
 
 This document turns the product spec and market research into a **buildable V1 system design**. It answers: *what we run, how a request flows, what we store, what we deliberately leave out.*
 
@@ -33,10 +34,12 @@ V1 is **not** a learned auto-router. Intelligent model selection (classifiers, p
 2. **Stream-through, never buffer-then-forward** — protect TTFT and memory.
 3. **Two routing layers, explicit** — model resolution, then provider selection.
 4. **Adapters own vendor quirks** — core pipeline stays provider-agnostic.
-5. **Meter every completed attempt** — cost control starts with a ledger.
+5. **Meter every terminal request** — one usage row per request outcome (with attempt metadata); cost control starts with a ledger.
 6. **Stateless API instances** — scale horizontally; durable state in Postgres/Redis.
 7. **Honest defaults** — no silent quality downgrades without config.
 8. **Inference latency dominates** — gateway overhead target p50 ≤ 15 ms warm (same region).
+9. **Stream commit is final** — no mid-stream model/provider switch after first client byte.
+10. **Text chat first** — tools/vision out of V1 DoD unless explicitly approved as stretch.
 
 ### 1.3 Category placement (from research)
 
@@ -156,10 +159,11 @@ Public URL terminates TLS at reverse proxy / platform (Caddy, Fly, Railway, ALB,
 | --- | --- | --- |
 | **HTTP edge** | Routes, CORS, request id, SSE headers | Full |
 | **Auth** | Bearer parse, key hash verify, key metadata load | Full |
-| **Rate limiter** | Per-key token bucket / fixed window via Redis | Basic |
-| **Validator** | Zod schemas for chat + models list | Full |
+| **Rate limiter** | Per-key RPM (fixed window or token bucket) via Redis | Basic V1 |
+| **Spend floor** | Default/clamp max_tokens; optional per-key daily token/$ soft cap | Basic V1 |
+| **Validator** | Zod schemas for chat + models list; reject vision/tools if out of policy | Full |
 | **Registry** | Model id → provider, upstream id, pricing, capabilities, endpoint order | Full |
-| **Router** | Resolve model; build attempt plan (provider order + model fallbacks) | Full |
+| **Router** | Resolve model; build attempt plan (endpoints + model fallbacks); pre-commit only for stream | Full |
 | **Adapter host** | Dispatch to provider adapter; enforce timeout | Full |
 | **Adapters** | OpenAI, Anthropic request/response/stream mapping | ≥ 2 |
 | **Stream proxy** | Pipe/transform SSE chunks; abort propagation | Full |
@@ -290,30 +294,47 @@ interface ChatAdapter {
 
 Two distinct mechanisms (aligned with OpenRouter mental model):
 
-| Mechanism | Meaning | V1 support |
-| --- | --- | --- |
-| **Provider failover** | Same logical model, next host/credentials | Yes — ordered endpoints in registry |
-| **Model fallback** | Different model after model-level failure | Yes — optional `models: string[]` or registry chain |
+| Mechanism | Meaning | V1 support | V1 realism |
+| --- | --- | --- | --- |
+| **Provider multi-endpoint** | Same logical model, next host/credentials | Structure yes — ordered endpoints in registry | Needs dual keys/regions; often empty day one |
+| **Model fallback** | Different model after model-level failure | Yes — `models: string[]` or registry `fallback_models` | **Primary reliability demo** (OpenAI → Anthropic) |
 
 ```text
 Plan example for model "openai/gpt-4o-mini" with fallback "anthropic/claude-3-5-haiku":
 
   Attempt 1: openai   / gpt-4o-mini
   Attempt 2: openai   / gpt-4o-mini   (secondary key/region if configured)
-  Attempt 3: anthropic / claude-3-5-haiku   (only if model fallback enabled)
+  Attempt 3: anthropic / claude-3-5-haiku   (model fallback)
 ```
 
 **Retry policy (V1 defaults):**
 
 | Condition | Action |
 | --- | --- |
-| Upstream 408 / 429 / 5xx | Next attempt (same or next provider) |
+| Upstream 408 / 429 / 5xx | Next attempt (if still allowed — see stream commit) |
 | Network timeout / reset | Next attempt |
 | 400 validation / 401 from provider | Fail fast (config bug); do not spin |
 | Max attempts | Default **3**; hard cap **5** |
 | Total wall budget | e.g. **120s** request deadline (configurable) |
 
 No infinite fallback loops. Each attempt logged with `request_id` + `attempt_n`.
+
+### 5.3.1 Stream commit rule (locked)
+
+Transparent multi-attempt failover **must not** break the OpenAI client stream contract.
+
+| Mode | Rule |
+| --- | --- |
+| **Non-stream** | Try attempts `1..N` until success or exhausted |
+| **Stream** | Only try further attempts **before** the response is committed to the client (i.e. before/at first client SSE byte after a viable upstream). After commit: **no** model/provider switch. Mid-stream upstream failure → end stream with error semantics + meter partial usage |
+| **Logging** | Record `attempt_count`, failed attempts in logs/optional trace; **one** `usage_events` row for the terminal request |
+
+```text
+Stream timeline:
+
+  [attempt 1 fails] → [attempt 2 opens upstream OK] → COMMIT to client
+       ↑ still free to failover                      ↑ no more failover
+```
 
 ### 5.4 Sequence diagram (stream + failover)
 
@@ -360,11 +381,11 @@ request.model
 
 ### 6.2 Model ID scheme
 
-| Pattern | Example | Resolution |
+| Pattern | Example | V1 |
 | --- | --- | --- |
-| Canonical | `openai/gpt-4o-mini` | Direct registry key |
-| Canonical | `anthropic/claude-sonnet-4` | Direct registry key |
-| Alias (optional V1) | `aihay/cheap` | Registry policy → concrete model |
+| Canonical | `openai/gpt-4o-mini` | **DoD** — direct registry key |
+| Canonical | `anthropic/claude-…` | **DoD** — direct registry key |
+| Alias | `aihay/cheap` | **Out of V1 DoD** (Phase 2) |
 | Auto | `aihay/auto` | **Not in V1** (return clear 400) |
 
 ### 6.3 Registry record (logical)
@@ -509,12 +530,14 @@ V1 may use a single default workspace.
 | `workspace_id` | uuid FK | |
 | `name` | text | human label |
 | `key_prefix` | text | e.g. `sk-aihay-…` first chars for UI |
-| `key_hash` | text unique | HMAC-SHA256 or argon2id of secret |
-| `rate_limit_rpm` | int null | |
+| `key_hash` | text unique | **HMAC-SHA256(secret, pepper)** — high-entropy API keys, not passwords |
+| `rate_limit_rpm` | int null | Basic V1 abuse floor |
+| `daily_token_limit` | bigint null | Optional spend floor |
+| `daily_cost_usd_limit` | numeric null | Optional spend floor |
 | `revoked_at` | timestamptz null | |
 | `created_at` | timestamptz | |
 
-Secret shown **once** at creation; only hash stored.
+Secret shown **once** at creation; only hash stored. Prefer HMAC+pepper over argon2 for API keys (random secrets; auth is cache-friendly).
 
 #### `models` (optional DB; YAML acceptable for V1)
 
@@ -594,14 +617,20 @@ Authorization: Bearer sk-aihay-<secret>
 
 Hot path optimization: Redis cache `key_hash → { id, workspace_id, rpm, revoked }` with short TTL (30–60s). Invalidate on revoke.
 
-### 9.2 Rate limiting
+### 9.2 Rate limiting and spend floor
 
-| Scope | Algorithm | Storage |
+| Control | V1 | Storage |
 | --- | --- | --- |
-| Per API key | Fixed window or token bucket (RPM) | Redis |
-| Global (optional) | Protect process | Redis / in-process |
+| Per-key RPM | **Required** (basic abuse floor) | Redis |
+| Default / max clamp on `max_tokens` | **Required** | Config |
+| Per-key daily token or $ soft cap | **Recommended** | Redis counters + key metadata |
+| Workspace budgets UI | Phase 2 | — |
+| Global process protection | Optional | Redis / in-process |
 
-On exceed: `429` + `Retry-After`.
+On RPM exceed: `429` + `Retry-After`.  
+On daily cap exceed: `429` with clear `code` (e.g. `daily_limit_exceeded`).
+
+**Why:** V1 holds **platform** provider keys; a leaked AI Hay key spends operator money. RPM alone is not enough for internet-exposed deploys.
 
 ### 9.3 Secrets
 
@@ -666,14 +695,18 @@ Prices come from registry. Store **raw tokens + estimate**; reconcile later if b
 
 **Acceptable MVP:** fire-and-forget async insert after response starts/finishes; never block stream setup on metering I/O beyond a few ms budget.
 
-### 11.3 What “completed” means
+### 11.3 What gets a usage row
+
+**One `usage_events` row per terminal client request**, not one row per failed hop.
 
 | Outcome | Meter? |
 | --- | --- |
-| Full success | Yes |
-| Stream partial then client abort | Yes (tokens known / estimated) |
-| All attempts failed | Yes (status=error, tokens may be 0) |
+| Full success | Yes (`attempt_count` ≥ 1) |
+| Stream partial then client abort | Yes (tokens known / estimated; status=aborted) |
+| All attempts failed | Yes (status=error; tokens may be 0) |
 | Auth failure before model | Optional lightweight audit; not full usage |
+
+Failed attempts belong in **logs / optional request_traces**, not as separate billable usage rows.
 
 ---
 
@@ -735,22 +768,30 @@ If budgets fail, profile **architecture** (remote DB on hot path, buffering, col
 - Translate messages: system → top-level `system`; roles/content blocks.
 - Headers: `x-api-key`, `anthropic-version`.
 - Map streaming events (`content_block_delta`, etc.) → OpenAI chunk shape.
-- Tools / multimodal: support subset documented for V1; reject unsupported with clear 400.
+- **V1 DoD:** text-only. Reject tools/vision with clear 400 unless an approved stretch lands.
 
-### 14.3 Capability gates
+### 14.3 Capability gates (V1 content policy)
 
-Before call, if request uses tools/vision and registry says unsupported → **400** with actionable message (don’t send broken upstream call).
+| Input | V1 behavior |
+| --- | --- |
+| Text `messages` | Allow |
+| `tools` / `functions` / tool_calls | **400** `unsupported_parameter` (stretch: OpenAI passthrough only) |
+| Image / vision parts | **400** |
+| Registry `supports_tools: false` | Enforce even if stretch disabled |
 
-### 14.4 Adapter test matrix
+Do not send broken upstream calls for unsupported features.
+
+### 14.4 Adapter test matrix (V1 DoD)
 
 | Test | OpenAI | Anthropic |
 | --- | --- | --- |
-| Non-stream hello | ✓ | ✓ |
-| Stream hello | ✓ | ✓ |
-| Tool call round-trip (if claimed) | ✓ | ✓ |
+| Non-stream hello (text) | ✓ | ✓ |
+| Stream hello (text) | ✓ | ✓ |
+| Reject tools/vision with 400 | ✓ | ✓ |
 | 429 classification | ✓ | ✓ |
 | Usage parse / estimate | ✓ | ✓ |
 | Abort mid-stream | ✓ | ✓ |
+| Tool round-trip | Stretch only | Out |
 
 ---
 
@@ -785,7 +826,7 @@ Before call, if request uses tools/vision and registry says unsupported → **40
 | Failure | Behavior |
 | --- | --- |
 | Postgres down | Auth may fail if cache miss; readiness false; prefer fail closed for new keys |
-| Redis down | Fail open with process-local limits **or** fail closed — **choose fail open with low default RPM** for V1 availability |
+| Redis down | **Fail open** with process-local low default RPM for V1 availability (document: not a supported multi-instance mode). Compose always runs Redis for supported deploys |
 | Provider outage | Failover plan; 502 if exhausted |
 | Partial stream then die | Close client stream; meter partial; log |
 | Poison registry config | Skip inactive models; boot with last-good snapshot if available |
@@ -799,26 +840,31 @@ Circuit-style optional: mark endpoint `unhealthy` in Redis for 30s after consecu
 
 ### 17.1 In scope
 
-- Chat completions stream + non-stream  
+- Text chat completions stream + non-stream  
 - Models list  
-- API keys (create via script/CLI acceptable)  
-- Registry with ≥ 2 providers  
-- Provider failover + model fallbacks  
-- Usage ledger + cost estimate  
+- API keys via CLI (create/list/revoke) — **no user accounts**  
+- Registry with ≥ 2 providers (canonical `provider/model` ids)  
+- Model fallbacks (primary) + multi-endpoint structure  
+- Pre-commit stream failover only  
+- Basic per-key RPM + max_tokens clamp (+ optional daily cap)  
+- Usage ledger + cost estimate (one row per terminal request)  
 - Docker Compose deploy  
-- Health endpoints  
-- Docs: quickstart with OpenAI SDK  
+- `/health` + `/ready`  
+- Docs: quickstart with OpenAI SDK (TS required; Python nice)  
 
 ### 17.2 Explicitly out of scope
 
 | Item | Phase |
 | --- | --- |
+| User signup / OAuth / sessions | 2 |
 | Dashboard UI | 2 |
 | Stripe / credits / prepaid balance | 2 |
 | BYOK (customer provider keys) | 2 |
 | Organizations / SSO | 2 |
 | Semantic cache | 2 |
-| Virtual models beyond simple aliases | 2 |
+| Aliases / virtual models (`aihay/cheap`, …) | 2 |
+| Tools / vision as productized features | 2+ |
+| Mid-stream transparent failover | never (wrong contract) |
 | Smart / auto routing | 3 |
 | Embeddings / images APIs | 3 |
 | 10+ provider adapters | later |
@@ -839,11 +885,12 @@ V1 metering is **billing-ready**, not billing-complete. Research on OpenRouter�
 
 | Phase | Architecture milestone | Exit criteria |
 | --- | --- | --- |
-| **0 — Spike** | Single process; 2 adapters; non-stream; hard-coded key | Normalized response from both providers |
-| **1a — Wire** | Hono routes; Zod; stream-through SSE | OpenAI SDK stream works against local server |
-| **1b — Control plane** | Postgres keys; registry YAML; usage events | Metered requests; multi-key auth |
-| **1c — Reliability** | Attempt plan; timeouts; failover | Kill primary path; client still succeeds |
-| **1d — Ship** | Docker Compose; `/health`; quickstart README | External smoke test green |
+| **0 — Spike** | Single process; 2 text adapters; non-stream; hard-coded key | Normalized response from both providers |
+| **1a — Wire** | Hono routes; Zod; stream-through SSE; reject tools/vision | OpenAI SDK stream works against local server |
+| **1b — Control plane** | Postgres CLI keys; registry YAML; usage; RPM + max_tokens floor | Metered multi-key auth |
+| **1c — Reliability** | Attempt plan; model fallback; stream pre-commit only | Primary fail → fallback succeeds |
+| **1d — Ship** | Docker Compose; `/health`+`/ready`; quickstart | Smoke green |
+| **1e — Harden** | Tests, security, tag | **`v0.1.0`** |
 
 ---
 
@@ -861,16 +908,30 @@ V1 metering is **billing-ready**, not billing-complete. Research on OpenRouter�
 
 ---
 
-## 20. Open engineering decisions
+## 20. Engineering decisions
+
+### 20.1 Locked
+
+| # | Decision | Choice |
+| --- | --- | --- |
+| 1 | HTTP framework | **Hono** |
+| 2 | Runtime | **Node 22+ LTS** |
+| 3 | Key hashing | **HMAC-SHA256 + pepper** |
+| 4 | Stream failover | **Pre-commit only** |
+| 5 | Content V1 | **Text only** |
+| 6 | Aliases | **Out of V1 DoD** |
+| 7 | Identity | **CLI ApiKey**; no User |
+| 8 | First tag | **`v0.1.0`** |
+
+### 20.2 Flexible (pick at implement time)
 
 | # | Decision | Recommendation | Revisit when |
 | --- | --- | --- | --- |
-| 1 | Hono vs Fastify | **Hono** | Need Fastify plugin ecosystem |
-| 2 | YAML-only vs DB registry | **YAML seed + DB override** | Multi-tenant custom models |
-| 3 | Sync vs async usage | **Async enqueue** | Volume near-zero (sync OK) |
-| 4 | Redis required? | **Yes for multi-instance** | Single-process demo can mock |
-| 5 | Bun vs Node | **Node LTS default** | Bun proves stream parity in CI |
-| 6 | Monorepo | Single `apps/api` until SDK/dashboard | Second package needed |
+| 1 | YAML-only vs DB registry | **YAML seed**; DB optional later | Multi-tenant custom models |
+| 2 | Sync vs async usage | **Async enqueue** preferred | Volume near-zero (sync OK) |
+| 3 | Redis | **Required in Compose**; fail-open local RPM if down | Multi-instance always needs Redis |
+| 4 | ORM | Drizzle or Kysely | Team preference |
+| 5 | Monorepo | Single `apps/api` until SDK/dashboard | Second package needed |
 
 ---
 
@@ -895,14 +956,14 @@ V1 metering is **billing-ready**, not billing-complete. Research on OpenRouter�
 
 **AI Hay Router V1** is a **stateless TypeScript gateway** with a **registry-driven router**:
 
-1. Authenticate AI Hay keys  
-2. Resolve model → ordered upstream attempts  
-3. Execute via **OpenAI + Anthropic adapters**  
-4. **Stream-through** SSE with failover  
-5. **Meter** every terminal request  
-6. Deploy as **Docker Compose** (api + Postgres + Redis)
+1. Authenticate **CLI-issued** AI Hay keys (no user accounts)  
+2. Resolve **canonical** model → ordered attempts (model fallback primary)  
+3. Execute via **OpenAI + Anthropic text adapters**  
+4. **Stream-through** SSE with **pre-commit** failover only  
+5. **Meter** one usage row per terminal request; RPM + max_tokens spend floor  
+6. Deploy as **Docker Compose** → tag **`v0.1.0`**
 
-Ship this control plane before catalog scale, smart routing, or billing. Measurement and a clean OpenAI-compatible contract are the architecture’s north star.
+Ship this control plane before catalog scale, aliases, tools/vision, smart routing, or billing. Measurement and a clean OpenAI-compatible contract are the architecture’s north star.
 
 ---
 
