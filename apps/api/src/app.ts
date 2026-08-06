@@ -5,6 +5,7 @@ import type { BudgetStore } from "./db/budget-types.js";
 import type { ProviderSecretStore } from "./db/secret-types.js";
 import type { KeyStore, UsageStore } from "./db/types.js";
 import type { TenancyStore } from "./db/tenancy-types.js";
+import type { WalletStore } from "./db/wallet-types.js";
 import type { Logger } from "./lib/logger.js";
 import type { RateLimiter } from "./lib/rate-limit.js";
 import type { Metrics } from "./observability/metrics.js";
@@ -26,6 +27,7 @@ export interface AppDeps {
   tenancy: TenancyStore;
   budgets: BudgetStore;
   secrets: ProviderSecretStore;
+  wallets: WalletStore;
   rateLimiter: RateLimiter;
   metrics: Metrics | null;
   readyCheckDb?: () => Promise<boolean>;
@@ -55,6 +57,7 @@ export function createApp(deps: AppDeps) {
         tenancy: deps.tenancy,
         budgets: deps.budgets,
         secrets: deps.secrets,
+        wallets: deps.wallets,
         logger: deps.logger,
         sessionSecret: deps.config.SESSION_SECRET,
       }),
@@ -84,6 +87,7 @@ export function createApp(deps: AppDeps) {
       metrics: deps.metrics,
       budgets: deps.budgets,
       secrets: deps.secrets,
+      wallets: deps.wallets,
     }),
   );
 

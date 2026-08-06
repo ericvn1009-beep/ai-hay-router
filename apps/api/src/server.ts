@@ -30,6 +30,7 @@ const app = createApp({
   tenancy: stores.tenancy,
   budgets: stores.budgets,
   secrets: stores.secrets,
+  wallets: stores.wallets,
   rateLimiter: stores.rateLimiter,
   metrics,
   readyCheckDb: stores.ready,
@@ -49,6 +50,8 @@ logger.info("aihay_starting", {
   feature_aliases: config.FEATURE_ALIASES,
   feature_budgets: config.FEATURE_BUDGETS,
   feature_byok: config.FEATURE_BYOK,
+  feature_credits: config.FEATURE_CREDITS,
+  feature_tools_vision: config.FEATURE_TOOLS_VISION,
   otel_enabled: otel.enabled,
 });
 

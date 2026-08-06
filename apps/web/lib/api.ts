@@ -150,4 +150,27 @@ export const api = {
       `/workspaces/${workspaceId}/providers/${provider}/secret`,
       { method: "DELETE" },
     ),
+
+  wallet: (workspaceId: string) =>
+    control<{
+      enabled: boolean;
+      balance_usd: number | null;
+      ledger: Array<{
+        id: string;
+        kind: string;
+        amount_usd: number;
+        balance_after: number;
+        reason: string | null;
+        created_at: string;
+      }>;
+    }>(`/workspaces/${workspaceId}/wallet`),
+
+  creditWallet: (
+    workspaceId: string,
+    body: { amount_usd: number; idempotency_key: string; reason?: string },
+  ) =>
+    control<{ balance_usd: number; replayed: boolean; entry_id: string }>(
+      `/workspaces/${workspaceId}/wallet/credit`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 };

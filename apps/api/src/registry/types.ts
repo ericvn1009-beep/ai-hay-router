@@ -11,6 +11,8 @@ export interface ModelRecord {
   upstream_id: string;
   context_length: number;
   supports_tools: boolean;
+  /** Multimodal image inputs (V2.7) */
+  supports_vision: boolean;
   supports_streaming: boolean;
   input_price_per_mtok: number;
   output_price_per_mtok: number;

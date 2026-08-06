@@ -32,6 +32,9 @@ export function Nav({ email }: { email?: string }) {
       <Link href="/byok" className={path === "/byok" ? "active" : ""}>
         BYOK
       </Link>
+      <Link href="/wallet" className={path === "/wallet" ? "active" : ""}>
+        Wallet
+      </Link>
       {email && <span className="muted mono">{email}</span>}
       <button type="button" className="secondary" onClick={() => void logout()}>
         Log out

@@ -72,6 +72,10 @@ cp .env.example .env
 | `XAI_API_KEY` | — | Platform key for Grok models |
 | `FEATURE_BYOK` | `false` | Workspace-supplied provider keys (V2.5) |
 | `BYOK_MASTER_KEY` | — | AES master key (base64 32 bytes or 64-char hex). **Required in prod when BYOK on** |
+| `FEATURE_CREDITS` | `false` | Prepaid wallet for platform-path inference (V2.6) |
+| `CREDITS_BYOK_BYPASS` | `true` | Skip wallet when workspace has BYOK for the provider |
+| `STRIPE_WEBHOOK_SECRET` | — | Optional shared secret for credit webhooks |
+| `FEATURE_TOOLS_VISION` | `false` | Allow tools + multimodal content when model supports (V2.7) |
 | `REQUEST_TIMEOUT_MS` | `120000` | Per-attempt upstream timeout |
 | `DEFAULT_MAX_TOKENS` | `4096` | Default and **clamp** for `max_tokens` |
 | `DEFAULT_RPM` | `60` | Per-key requests/minute if key has no override |
@@ -302,6 +306,39 @@ Dashboard: **BYOK** page at `/byok` (when web is running).
 | Rotate master key | Generate new `BYOK_MASTER_KEY`; customers must re-save provider keys (old ciphertext unreadable) |
 | Customer key compromise | `DELETE` secret; revoke upstream key at provider |
 | Lost master key | Cannot recover ciphertext; wipe `provider_secrets` and re-onboard |
+
+### Credits / wallet (V2.6)
+
+When `FEATURE_CREDITS=true`, platform-path chat requires a positive wallet balance (else **402** `insufficient_credits`). Successful requests debit `cost_usd_estimate` (idempotent on `request_id`). BYOK workspaces skip billing when `CREDITS_BYOK_BYPASS=true` (default).
+
+```bash
+# Manual top-up (admin session)
+curl -s -b cookies.txt -X POST \
+  "localhost:3000/control/v1/workspaces/$WS/wallet/credit" \
+  -H 'Content-Type: application/json' \
+  -d '{"amount_usd":50,"idempotency_key":"promo-1"}'
+
+# Stripe-style webhook (idempotent on event_id)
+curl -s -X POST localhost:3000/control/v1/webhooks/credits \
+  -H 'Content-Type: application/json' \
+  -H "X-Credits-Webhook-Secret: $STRIPE_WEBHOOK_SECRET" \
+  -d '{"event_id":"evt_123","workspace_id":"…","amount_usd":25}'
+```
+
+Dashboard: **Wallet** at `/wallet`. Refunds are out-of-band (manual ledger credit with negative ops process).
+
+### Tools / vision (V2.7)
+
+Requires `FEATURE_TOOLS_VISION=true` **and** model capability flags:
+
+| Model | tools | vision |
+| --- | --- | --- |
+| `openai/gpt-4o`, `gpt-4o-mini` | yes | yes |
+| `anthropic/claude-*` | yes | yes |
+| `xai/grok-4.5` | yes | yes |
+| `xai/grok-3`, `grok-3-mini` | yes | no |
+
+Unsupported combo → **400** `unsupported_parameter`. Text-only clients unchanged when flag is off.
 
 ### Dashboard UI (V2.3)
 

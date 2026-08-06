@@ -39,6 +39,12 @@ const envSchema = z.object({
   FEATURE_BYOK: boolish,
   /** Base64 (32 bytes) or 64-char hex AES master key; falls back to pepper-derived key in dev */
   BYOK_MASTER_KEY: z.string().optional().default(""),
+  FEATURE_CREDITS: boolish,
+  /** When true, BYOK traffic skips wallet pre-check/debit */
+  CREDITS_BYOK_BYPASS: boolish,
+  /** Shared secret for Stripe-style credit webhooks (optional) */
+  STRIPE_WEBHOOK_SECRET: z.string().optional().default(""),
+  FEATURE_TOOLS_VISION: boolish,
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
@@ -49,6 +55,9 @@ export type AppConfig = z.infer<typeof envSchema> & {
   FEATURE_ALIASES: boolean;
   FEATURE_BUDGETS: boolean;
   FEATURE_BYOK: boolean;
+  FEATURE_CREDITS: boolean;
+  CREDITS_BYOK_BYPASS: boolean;
+  FEATURE_TOOLS_VISION: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -62,6 +71,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     FEATURE_ALIASES: parsed.FEATURE_ALIASES ?? true,
     FEATURE_BUDGETS: parsed.FEATURE_BUDGETS ?? true,
     FEATURE_BYOK: parsed.FEATURE_BYOK ?? false,
+    FEATURE_CREDITS: parsed.FEATURE_CREDITS ?? false,
+    CREDITS_BYOK_BYPASS: parsed.CREDITS_BYOK_BYPASS ?? true,
+    FEATURE_TOOLS_VISION: parsed.FEATURE_TOOLS_VISION ?? false,
   };
 }
 

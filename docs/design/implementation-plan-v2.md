@@ -4,7 +4,7 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V2) |
-| **Status** | In progress — V2.0–**V2.5** done (`v0.5.0`); next V2.6 credits or V2.7 tools/vision |
+| **Status** | In progress — V2.0–**V2.7** done (`v0.7.0`); V2 program complete for core flags |
 | **Last updated** | 2026-08-06 |
 | **Based on** | [Architecture V2](./architecture-v2.md) · [Architecture V1](./architecture-v1.md) · [Product Spec](./product-spec.md) |
 | **Baseline code** | `apps/api` V1 gateway (Compose, keys, metering, OpenAI/Anthropic/xAI) |
@@ -411,10 +411,12 @@ docker compose logs api 2>&1 | grep request_complete
 
 #### Acceptance criteria
 
-- [ ] Zero-balance workspace cannot incur platform-path inference.  
-- [ ] BYOK path can bypass credits if product policy says so (flag).  
-- [ ] Webhook replays do not double-credit.  
-- [ ] Tag **`v0.6.0`**.
+- [x] Zero-balance workspace cannot incur platform-path inference.  
+- [x] BYOK path can bypass credits if product policy says so (flag).  
+- [x] Webhook replays do not double-credit.  
+- [x] Tag **`v0.6.0`** (shipped with `v0.7.0` cumulative).
+
+**Shipped:** `wallets` + `ledger_entries`; memory/pg stores; pre-check → 402 `insufficient_credits`; post-debit idempotent on `request_id`; `CREDITS_BYOK_BYPASS`; control wallet + credit; `POST /webhooks/credits` idempotent on `event_id`; dashboard `/wallet`.
 
 ---
 
@@ -437,10 +439,12 @@ docker compose logs api 2>&1 | grep request_complete
 
 #### Acceptance criteria
 
-- [ ] Unsupported combo still returns clear `400`.  
-- [ ] Supported tool round-trip works on ≥1 provider in CI (mock) and ≥1 live optional.  
-- [ ] Text-only clients unchanged.  
-- [ ] Tag **`v0.7.0`**.
+- [x] Unsupported combo still returns clear `400`.  
+- [x] Supported tool round-trip works on ≥1 provider in CI (mock) and ≥1 live optional.  
+- [x] Text-only clients unchanged.  
+- [x] Tag **`v0.7.0`**.
+
+**Shipped:** `supports_tools` / `supports_vision` on registry; `FEATURE_TOOLS_VISION`; schema gates; OpenAI tools/vision passthrough; Anthropic tool + image mapping; capability matrix in models.yaml + runbook.
 
 ---
 

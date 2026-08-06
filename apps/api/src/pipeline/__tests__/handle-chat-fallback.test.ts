@@ -11,6 +11,7 @@ function model(id: string, provider: string, upstream: string): ModelRecord {
     upstream_id: upstream,
     context_length: 128000,
     supports_tools: false,
+    supports_vision: false,
     supports_streaming: true,
     input_price_per_mtok: 1,
     output_price_per_mtok: 1,

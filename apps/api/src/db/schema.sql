@@ -88,3 +88,21 @@ CREATE TABLE IF NOT EXISTS provider_secrets (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (workspace_id, provider)
 );
+
+CREATE TABLE IF NOT EXISTS wallets (
+  workspace_id UUID PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  balance_usd NUMERIC NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ledger_entries (
+  id UUID PRIMARY KEY,
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  amount_usd NUMERIC NOT NULL,
+  balance_after NUMERIC NOT NULL,
+  request_id TEXT NULL,
+  idempotency_key TEXT NULL,
+  reason TEXT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

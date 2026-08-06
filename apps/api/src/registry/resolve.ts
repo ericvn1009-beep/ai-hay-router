@@ -67,6 +67,7 @@ export function listModels(
     upstream_id: resolves_to,
     context_length: 0,
     supports_tools: false,
+    supports_vision: false,
     supports_streaming: true,
     input_price_per_mtok: 0,
     output_price_per_mtok: 0,

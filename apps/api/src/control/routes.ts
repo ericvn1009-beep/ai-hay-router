@@ -6,6 +6,7 @@ import type { BudgetStore } from "../db/budget-types.js";
 import type { ProviderSecretStore } from "../db/secret-types.js";
 import type { KeyStore, MembershipRole, UsageStore } from "../db/types.js";
 import type { TenancyStore } from "../db/tenancy-types.js";
+import type { WalletStore } from "../db/wallet-types.js";
 import { openaiError } from "../lib/errors.js";
 import type { Logger } from "../lib/logger.js";
 import { canAdminWorkspace, canInvite, canManageKeys, roleAtLeast } from "../lib/roles.js";
@@ -26,6 +27,7 @@ export function controlRoutes(opts: {
   tenancy: TenancyStore;
   budgets: BudgetStore;
   secrets: ProviderSecretStore;
+  wallets: WalletStore;
   logger: Logger;
   sessionSecret: string;
 }) {
@@ -49,11 +51,52 @@ export function controlRoutes(opts: {
         "GET|PUT /control/v1/workspaces/:id/budget",
         "GET /control/v1/workspaces/:id/providers",
         "PUT|DELETE /control/v1/workspaces/:id/providers/:provider/secret",
+        "GET /control/v1/workspaces/:id/wallet",
+        "POST /control/v1/workspaces/:id/wallet/credit",
+        "POST /control/v1/webhooks/credits",
         "GET|POST /control/v1/organizations/:orgId/members",
         "GET /control/v1/workspaces/:id/audit",
       ],
     }),
   );
+
+  /**
+   * Billing webhook (Stripe-style simplified):
+   * POST { event_id, workspace_id, amount_usd, reason? }
+   * Header: X-Credits-Webhook-Secret when STRIPE_WEBHOOK_SECRET is set.
+   * Idempotent on event_id.
+   */
+  r.post("/control/v1/webhooks/credits", async (c) => {
+    if (!opts.config.FEATURE_CREDITS) {
+      throw openaiError(400, "Credits feature is disabled", "feature_disabled");
+    }
+    const secret = opts.config.STRIPE_WEBHOOK_SECRET;
+    if (secret) {
+      const provided = c.req.header("x-credits-webhook-secret") ?? "";
+      if (provided !== secret) {
+        throw openaiError(401, "Invalid webhook secret", "unauthorized");
+      }
+    }
+    const body = z
+      .object({
+        event_id: z.string().min(1),
+        workspace_id: z.string().uuid(),
+        amount_usd: z.number().positive(),
+        reason: z.string().optional(),
+      })
+      .parse(await c.req.json());
+
+    const result = await opts.wallets.credit(body.workspace_id, body.amount_usd, {
+      idempotencyKey: body.event_id,
+      reason: body.reason ?? "webhook_credit",
+    });
+    return c.json({
+      ok: true,
+      replayed: result.replayed,
+      balance_usd: result.entry.balanceAfter,
+      entry_id: result.entry.id,
+    });
+  });
 
   r.post("/control/v1/auth/register", async (c) => {
     const body = z
@@ -543,6 +586,71 @@ export function controlRoutes(opts: {
       });
     }
     return c.json({ ok, provider, configured: false });
+  });
+
+  // V2.6 wallets
+  secured.get("/workspaces/:id/wallet", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    await requireAccess(opts, user.id, workspaceId, "viewer");
+    if (!opts.config.FEATURE_CREDITS) {
+      return c.json({ enabled: false, balance_usd: null, ledger: [] });
+    }
+    const bal = await opts.wallets.getBalance(workspaceId);
+    const ledger = await opts.wallets.listLedger(workspaceId, 25);
+    return c.json({
+      enabled: true,
+      balance_usd: bal.balanceUsd,
+      updated_at: bal.updatedAt,
+      ledger: ledger.map((e) => ({
+        id: e.id,
+        kind: e.kind,
+        amount_usd: e.amountUsd,
+        balance_after: e.balanceAfter,
+        request_id: e.requestId,
+        reason: e.reason,
+        created_at: e.createdAt,
+      })),
+    });
+  });
+
+  secured.post("/workspaces/:id/wallet/credit", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    const access = await requireAccess(opts, user.id, workspaceId, "admin");
+    if (!opts.config.FEATURE_CREDITS) {
+      throw openaiError(400, "Credits feature is disabled", "feature_disabled");
+    }
+    const body = z
+      .object({
+        amount_usd: z.number().positive().max(1_000_000),
+        idempotency_key: z.string().min(1).max(128),
+        reason: z.string().max(256).optional(),
+      })
+      .parse(await c.req.json());
+
+    const result = await opts.wallets.credit(workspaceId, body.amount_usd, {
+      idempotencyKey: body.idempotency_key,
+      reason: body.reason ?? "manual_credit",
+    });
+    await opts.tenancy.insertAudit({
+      organizationId: access.organizationId,
+      workspaceId,
+      actorUserId: user.id,
+      action: "wallet.credited",
+      resourceType: "wallet",
+      resourceId: workspaceId,
+      meta: {
+        amount_usd: body.amount_usd,
+        replayed: result.replayed,
+        idempotency_key: body.idempotency_key,
+      },
+    });
+    return c.json({
+      balance_usd: result.entry.balanceAfter,
+      replayed: result.replayed,
+      entry_id: result.entry.id,
+    });
   });
 
   // Critical: nest under /control/v1 so session middleware never sees /v1 data plane

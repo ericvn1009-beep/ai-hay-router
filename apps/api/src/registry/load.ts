@@ -66,6 +66,7 @@ export function parseSimpleYamlModels(text: string): ModelRecord[] {
         upstream_id: current.upstream_id,
         context_length: current.context_length ?? 128000,
         supports_tools: current.supports_tools ?? false,
+        supports_vision: current.supports_vision ?? false,
         supports_streaming: current.supports_streaming ?? true,
         input_price_per_mtok: current.input_price_per_mtok ?? 0,
         output_price_per_mtok: current.output_price_per_mtok ?? 0,
@@ -137,6 +138,9 @@ export function parseSimpleYamlModels(text: string): ModelRecord[] {
         break;
       case "supports_tools":
         current.supports_tools = val === "true";
+        break;
+      case "supports_vision":
+        current.supports_vision = val === "true";
         break;
       case "supports_streaming":
         current.supports_streaming = val === "true";

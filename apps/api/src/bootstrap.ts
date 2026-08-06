@@ -14,6 +14,9 @@ import { createPgTenancyStore } from "./db/pg-tenancy.js";
 import type { ProviderSecretStore } from "./db/secret-types.js";
 import type { KeyStore, UsageStore } from "./db/types.js";
 import type { TenancyStore } from "./db/tenancy-types.js";
+import { createMemoryWalletStore } from "./db/memory-wallet.js";
+import { createPgWalletStore } from "./db/pg-wallet.js";
+import type { WalletStore } from "./db/wallet-types.js";
 import type { Logger } from "./lib/logger.js";
 import {
   createMemoryRateLimiter,
@@ -28,6 +31,7 @@ export interface RuntimeStores {
   tenancy: TenancyStore;
   budgets: BudgetStore;
   secrets: ProviderSecretStore;
+  wallets: WalletStore;
   rateLimiter: RateLimiter;
   pool: pg.Pool | null;
   redis: Redis | null;
@@ -119,12 +123,18 @@ export async function bootstrapStores(
       ? createPgSecretStore(pool, masterKey)
       : createMemorySecretStore(masterKey);
 
+  const wallets: WalletStore =
+    driver === "postgres" && pool
+      ? createPgWalletStore(pool)
+      : createMemoryWalletStore();
+
   return {
     keys,
     usage,
     tenancy,
     budgets,
     secrets,
+    wallets,
     rateLimiter,
     pool,
     redis,

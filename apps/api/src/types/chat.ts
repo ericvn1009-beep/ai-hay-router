@@ -2,9 +2,17 @@
 
 export type ChatRole = "system" | "user" | "assistant" | "tool" | "function";
 
+/** Multimodal content part (OpenAI-style). */
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail?: string } }
+  | Record<string, unknown>;
+
+export type ChatContent = string | null | ChatContentPart[];
+
 export interface ChatMessage {
   role: ChatRole;
-  content: string | null;
+  content: ChatContent;
   name?: string;
   tool_calls?: unknown;
   tool_call_id?: string;
@@ -24,7 +32,6 @@ export interface ChatCompletionRequest {
   user?: string;
   /** AI Hay extension: model fallback chain */
   models?: string[];
-  /** Rejected in V1 if present with tools */
   tools?: unknown[];
   tool_choice?: unknown;
   functions?: unknown[];
@@ -57,6 +64,7 @@ export interface ChatCompletion {
 export interface ChatCompletionChunkDelta {
   role?: ChatRole;
   content?: string | null;
+  tool_calls?: unknown;
 }
 
 export interface ChatCompletionChunkChoice {
@@ -84,6 +92,9 @@ export interface NormalizedChatRequest {
   stop?: string | string[];
   user?: string;
   models?: string[];
+  tools?: unknown[];
+  tool_choice?: unknown;
+  response_format?: unknown;
 }
 
 export interface OpenAIErrorBody {

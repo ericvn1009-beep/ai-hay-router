@@ -4,6 +4,8 @@ import type { AppConfig } from "../config.js";
 import type { BudgetStore } from "../db/budget-types.js";
 import type { ProviderSecretStore } from "../db/secret-types.js";
 import type { UsageStore } from "../db/types.js";
+import type { WalletStore } from "../db/wallet-types.js";
+import { isByokProvider, type ByokProvider } from "../crypto/byok.js";
 import { AppError, openaiError } from "../lib/errors.js";
 import type { Logger } from "../lib/logger.js";
 import type { RateLimiter } from "../lib/rate-limit.js";
@@ -30,6 +32,7 @@ export function chatRoutes(opts: {
   metrics: Metrics | null;
   budgets: BudgetStore | null;
   secrets: ProviderSecretStore | null;
+  wallets: WalletStore | null;
 }) {
   const r = new Hono();
 
@@ -57,23 +60,37 @@ export function chatRoutes(opts: {
       recordRequestCompleteMetrics(opts.metrics, event);
     };
 
+    const requestedModel =
+      typeof (body as { model?: string })?.model === "string"
+        ? (body as { model: string }).model
+        : "unknown";
+
+    let modelRecord: ModelRecord | undefined;
+    try {
+      if (requestedModel !== "unknown") {
+        modelRecord = resolveModel(opts.registry, requestedModel, {
+          aliasesEnabled: opts.config.FEATURE_ALIASES,
+        });
+      }
+    } catch {
+      modelRecord = opts.registry.get(requestedModel);
+    }
+
     let input;
     try {
-      input = validateAndNormalizeChat(body, opts.config.DEFAULT_MAX_TOKENS);
+      input = validateAndNormalizeChat(body, {
+        defaultMaxTokens: opts.config.DEFAULT_MAX_TOKENS,
+        toolsVisionEnabled: opts.config.FEATURE_TOOLS_VISION,
+        model: modelRecord ?? null,
+      });
     } catch (e) {
       const errorCode =
         e instanceof AppError ? (e.code ?? e.message.slice(0, 120)) : "invalid_request";
       const httpStatus = e instanceof AppError ? Number(e.status) : 400;
       emitComplete({
         stream: Boolean((body as { stream?: boolean })?.stream),
-        model_requested:
-          typeof (body as { model?: string })?.model === "string"
-            ? (body as { model: string }).model
-            : "unknown",
-        model_used:
-          typeof (body as { model?: string })?.model === "string"
-            ? (body as { model: string }).model
-            : "unknown",
+        model_requested: requestedModel,
+        model_used: requestedModel,
         provider: "none",
         status: "error",
         http_status: httpStatus,
@@ -89,14 +106,6 @@ export function chatRoutes(opts: {
     }
 
     const signal = c.req.raw.signal;
-    let modelRecord: ModelRecord | undefined;
-    try {
-      modelRecord = resolveModel(opts.registry, input.model, {
-        aliasesEnabled: opts.config.FEATURE_ALIASES,
-      });
-    } catch {
-      modelRecord = opts.registry.get(input.model);
-    }
 
     // V2.4 budgets
     if (opts.config.FEATURE_BUDGETS && opts.budgets && apiKey.workspaceId !== "dev-workspace") {
@@ -129,6 +138,56 @@ export function chatRoutes(opts: {
       }
     }
 
+    // V2.6 credits pre-check (platform path; BYOK can bypass)
+    let chargeCredits = false;
+    if (
+      opts.config.FEATURE_CREDITS &&
+      opts.wallets &&
+      apiKey.workspaceId !== "dev-workspace"
+    ) {
+      const provider = modelRecord?.provider;
+      let byokConfigured = false;
+      if (
+        opts.config.CREDITS_BYOK_BYPASS &&
+        opts.secrets &&
+        provider &&
+        isByokProvider(provider)
+      ) {
+        const meta = await opts.secrets.getMeta(
+          apiKey.workspaceId,
+          provider as ByokProvider,
+        );
+        byokConfigured = Boolean(meta);
+      }
+      if (!byokConfigured) {
+        const spend = await opts.wallets.canSpend(apiKey.workspaceId);
+        if (!spend.allowed) {
+          emitComplete({
+            stream: Boolean(input.stream),
+            model_requested: input.model,
+            model_used: input.model,
+            provider: "none",
+            status: "error",
+            http_status: 402,
+            latency_ms: Date.now() - startedAt,
+            ttft_ms: null,
+            attempt_count: 0,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            cost_usd_estimate: 0,
+            error_code: "insufficient_credits",
+          });
+          throw openaiError(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            402 as any,
+            spend.reason ?? "Insufficient credits",
+            "insufficient_credits",
+          );
+        }
+        chargeCredits = true;
+      }
+    }
+
     const trackBudget = (cost: number, tokens: number) => {
       if (
         opts.config.FEATURE_BUDGETS &&
@@ -143,6 +202,30 @@ export function chatRoutes(opts: {
           });
         });
       }
+    };
+
+    const trackCredits = (cost: number, credentialMode: "platform" | "byok") => {
+      if (!chargeCredits || !opts.wallets || cost <= 0) return;
+      if (credentialMode === "byok" && opts.config.CREDITS_BYOK_BYPASS) return;
+      void opts.wallets
+        .debit(apiKey.workspaceId, cost, {
+          requestId,
+          reason: "inference",
+        })
+        .then((r) => {
+          if (!r.allowed) {
+            opts.logger.warn("credit_debit_insufficient_after_success", {
+              request_id: requestId,
+              reason: r.reason,
+            });
+          }
+        })
+        .catch((e) => {
+          opts.logger.warn("credit_debit_failed", {
+            request_id: requestId,
+            message: e instanceof Error ? e.message : String(e),
+          });
+        });
     };
 
     if (input.stream) {
@@ -273,6 +356,7 @@ export function chatRoutes(opts: {
           });
           enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
           trackBudget(usage.costUsdEstimate, promptTokens + completionTokens);
+          trackCredits(usage.costUsdEstimate, result.credentialMode);
           emitComplete({
             stream: true,
             model_requested: input.model,
@@ -332,6 +416,7 @@ export function chatRoutes(opts: {
       });
       enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
       trackBudget(usage.costUsdEstimate, promptTokens + completionTokens);
+      trackCredits(usage.costUsdEstimate, result.credentialMode);
       emitComplete({
         stream: false,
         model_requested: input.model,

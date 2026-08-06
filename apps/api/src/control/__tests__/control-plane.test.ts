@@ -6,6 +6,7 @@ import { createMemoryBudgetStore } from "../../db/memory-budget.js";
 import { createMemorySecretStore } from "../../db/memory-secrets.js";
 import { createMemoryStores } from "../../db/memory-store.js";
 import { createMemoryTenancyStore } from "../../db/memory-tenancy.js";
+import { createMemoryWalletStore } from "../../db/memory-wallet.js";
 import { createLogger } from "../../lib/logger.js";
 import { createMemoryRateLimiter } from "../../lib/rate-limit.js";
 import { resetMetricsForTests } from "../../observability/metrics.js";
@@ -18,10 +19,13 @@ function testApp() {
     FEATURE_METRICS: "false",
     FEATURE_COMPLETION_LOGS: "false",
     FEATURE_BYOK: "true",
+    FEATURE_CREDITS: "true",
+    FEATURE_TOOLS_VISION: "true",
     SESSION_SECRET: "test-session-secret",
     AIHAY_DEV_KEY: "sk-aihay-dev-local",
     AIHAY_KEY_PEPPER: "test-pepper",
     BYOK_MASTER_KEY: "test-byok-master",
+    STRIPE_WEBHOOK_SECRET: "whsec-test",
     STORE_DRIVER: "memory",
   } as unknown as NodeJS.ProcessEnv);
 
@@ -34,7 +38,11 @@ function testApp() {
     FEATURE_ALIASES: true,
     FEATURE_BUDGETS: true,
     FEATURE_BYOK: true,
+    FEATURE_CREDITS: true,
+    CREDITS_BYOK_BYPASS: true,
+    FEATURE_TOOLS_VISION: true,
     BYOK_MASTER_KEY: "test-byok-master",
+    STRIPE_WEBHOOK_SECRET: "whsec-test",
     SESSION_SECRET: "test-session-secret",
     AIHAY_DEV_KEY: "sk-aihay-dev-local",
     AIHAY_KEY_PEPPER: "test-pepper",
@@ -60,6 +68,7 @@ function testApp() {
   const secrets = createMemorySecretStore(
     resolveMasterKey({ masterKey: cfg.BYOK_MASTER_KEY, pepper: cfg.AIHAY_KEY_PEPPER }),
   );
+  const wallets = createMemoryWalletStore();
   const app = createApp({
     config: cfg,
     registry: loadRegistryFromYaml(),
@@ -69,10 +78,11 @@ function testApp() {
     tenancy,
     budgets,
     secrets,
+    wallets,
     rateLimiter: createMemoryRateLimiter(),
     metrics: null,
   });
-  return { app, mem, tenancy, budgets, secrets, cfg };
+  return { app, mem, tenancy, budgets, secrets, wallets, cfg };
 }
 
 function cookieFrom(res: Response): string {
@@ -272,5 +282,84 @@ describe("control plane", () => {
       providers: Array<{ provider: string; configured: boolean }>;
     };
     expect(afterBody.providers.find((p) => p.provider === "openai")?.configured).toBe(false);
+  });
+
+  it("wallet credit + webhook idempotency", async () => {
+    const { app } = testApp();
+    const reg = await app.request("/control/v1/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "wallet@example.com",
+        password: "password123",
+      }),
+    });
+    const { workspace_id } = (await reg.json()) as { workspace_id: string };
+    const cookie = cookieFrom(reg);
+
+    const credit = await app.request(
+      `/control/v1/workspaces/${workspace_id}/wallet/credit`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+          amount_usd: 25,
+          idempotency_key: "manual-1",
+          reason: "promo",
+        }),
+      },
+    );
+    expect(credit.status).toBe(200);
+    const creditBody = (await credit.json()) as { balance_usd: number; replayed: boolean };
+    expect(creditBody.balance_usd).toBe(25);
+    expect(creditBody.replayed).toBe(false);
+
+    const again = await app.request(
+      `/control/v1/workspaces/${workspace_id}/wallet/credit`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+          amount_usd: 25,
+          idempotency_key: "manual-1",
+        }),
+      },
+    );
+    expect((await again.json() as { replayed: boolean }).replayed).toBe(true);
+
+    const hook = await app.request("/control/v1/webhooks/credits", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Credits-Webhook-Secret": "whsec-test",
+      },
+      body: JSON.stringify({
+        event_id: "evt_stripe_1",
+        workspace_id,
+        amount_usd: 10,
+      }),
+    });
+    expect(hook.status).toBe(200);
+    expect((await hook.json() as { balance_usd: number }).balance_usd).toBe(35);
+
+    const hookReplay = await app.request("/control/v1/webhooks/credits", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Credits-Webhook-Secret": "whsec-test",
+      },
+      body: JSON.stringify({
+        event_id: "evt_stripe_1",
+        workspace_id,
+        amount_usd: 10,
+      }),
+    });
+    expect((await hookReplay.json() as { replayed: boolean }).replayed).toBe(true);
+
+    const bal = await app.request(`/control/v1/workspaces/${workspace_id}/wallet`, {
+      headers: { Cookie: cookie },
+    });
+    expect(bal.status).toBe(200);
+    expect((await bal.json() as { balance_usd: number }).balance_usd).toBe(35);
   });
 });
