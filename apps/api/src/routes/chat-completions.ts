@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { AppConfig } from "../config.js";
+import type { BudgetStore } from "../db/budget-types.js";
 import type { UsageStore } from "../db/types.js";
-import { AppError } from "../lib/errors.js";
+import { AppError, openaiError } from "../lib/errors.js";
 import type { Logger } from "../lib/logger.js";
 import type { RateLimiter } from "../lib/rate-limit.js";
 import { buildUsageEvent, enqueueUsage } from "../metering/usage.js";
@@ -13,6 +14,7 @@ import {
   type RequestCompleteEvent,
 } from "../observability/request-complete.js";
 import { handleChatNonStream, handleChatStream } from "../pipeline/handle-chat.js";
+import { resolveModel } from "../registry/resolve.js";
 import type { ModelRecord } from "../registry/types.js";
 import { validateAndNormalizeChat } from "./schemas.js";
 
@@ -25,6 +27,7 @@ export function chatRoutes(opts: {
   usage: UsageStore;
   rateLimiter: RateLimiter;
   metrics: Metrics | null;
+  budgets: BudgetStore | null;
 }) {
   const r = new Hono();
 
@@ -84,7 +87,61 @@ export function chatRoutes(opts: {
     }
 
     const signal = c.req.raw.signal;
-    const modelRecord = opts.registry.get(input.model);
+    let modelRecord: ModelRecord | undefined;
+    try {
+      modelRecord = resolveModel(opts.registry, input.model, {
+        aliasesEnabled: opts.config.FEATURE_ALIASES,
+      });
+    } catch {
+      modelRecord = opts.registry.get(input.model);
+    }
+
+    // V2.4 budgets
+    if (opts.config.FEATURE_BUDGETS && opts.budgets && apiKey.workspaceId !== "dev-workspace") {
+      const check = await opts.budgets.check(apiKey.workspaceId);
+      if (!check.allowed) {
+        c.header("Retry-After", "3600");
+        emitComplete({
+          stream: Boolean(input.stream),
+          model_requested: input.model,
+          model_used: input.model,
+          provider: "none",
+          status: "error",
+          http_status: 429,
+          latency_ms: Date.now() - startedAt,
+          ttft_ms: null,
+          attempt_count: 0,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          cost_usd_estimate: 0,
+          error_code: "budget_exceeded",
+        });
+        throw openaiError(429, check.reason ?? "Budget exceeded", "budget_exceeded");
+      }
+      if (check.softWarning) {
+        opts.logger.warn("budget_soft_warning", {
+          request_id: requestId,
+          workspace_id: apiKey.workspaceId,
+          usage: check.usage,
+        });
+      }
+    }
+
+    const trackBudget = (cost: number, tokens: number) => {
+      if (
+        opts.config.FEATURE_BUDGETS &&
+        opts.budgets &&
+        apiKey.workspaceId !== "dev-workspace" &&
+        (cost > 0 || tokens > 0)
+      ) {
+        void opts.budgets.addUsage(apiKey.workspaceId, cost, tokens).catch((e) => {
+          opts.logger.warn("budget_add_failed", {
+            request_id: requestId,
+            message: e instanceof Error ? e.message : String(e),
+          });
+        });
+      }
+    };
 
     if (input.stream) {
       let result;
@@ -210,6 +267,7 @@ export function chatRoutes(opts: {
             modelRecord: usedModel,
           });
           enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
+          trackBudget(usage.costUsdEstimate, promptTokens + completionTokens);
           emitComplete({
             stream: true,
             model_requested: input.model,
@@ -264,6 +322,7 @@ export function chatRoutes(opts: {
         modelRecord: usedModel,
       });
       enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
+      trackBudget(usage.costUsdEstimate, promptTokens + completionTokens);
       emitComplete({
         stream: false,
         model_requested: input.model,

@@ -17,28 +17,25 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   SERVICE_NAME: z.string().default("aihay-api"),
   INSTANCE_ID: z.string().optional().default(""),
-  /** Dev-only bypass key when STORE_DRIVER=memory (or always accepted if set and matches). */
   AIHAY_DEV_KEY: z.string().default("sk-aihay-dev-local"),
   AIHAY_KEY_PEPPER: z.string().default("dev-pepper-change-me"),
-  /** Signs control-plane session cookies */
   SESSION_SECRET: z.string().default("dev-session-secret-change-me"),
   DATABASE_URL: z.string().optional().default(""),
   REDIS_URL: z.string().optional().default(""),
-  /** memory | postgres — auto: postgres if DATABASE_URL set */
   STORE_DRIVER: z.enum(["memory", "postgres", "auto"]).default("auto"),
   OPENAI_API_KEY: z.string().optional().default(""),
   ANTHROPIC_API_KEY: z.string().optional().default(""),
-  /** xAI Grok platform key */
   XAI_API_KEY: z.string().optional().default(""),
   REQUEST_TIMEOUT_MS: z.coerce.number().default(120_000),
   DEFAULT_MAX_TOKENS: z.coerce.number().default(4096),
   MAX_ATTEMPTS: z.coerce.number().default(3),
   DEFAULT_RPM: z.coerce.number().default(60),
-  /** Feature flags */
   FEATURE_COMPLETION_LOGS: boolish,
   FEATURE_METRICS: boolish,
   FEATURE_OTEL: boolish,
   FEATURE_CONTROL_PLANE: boolish,
+  FEATURE_ALIASES: boolish,
+  FEATURE_BUDGETS: boolish,
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
@@ -46,6 +43,8 @@ export type AppConfig = z.infer<typeof envSchema> & {
   FEATURE_METRICS: boolean;
   FEATURE_OTEL: boolean;
   FEATURE_CONTROL_PLANE: boolean;
+  FEATURE_ALIASES: boolean;
+  FEATURE_BUDGETS: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -56,6 +55,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     FEATURE_METRICS: parsed.FEATURE_METRICS ?? true,
     FEATURE_OTEL: parsed.FEATURE_OTEL ?? false,
     FEATURE_CONTROL_PLANE: parsed.FEATURE_CONTROL_PLANE ?? true,
+    FEATURE_ALIASES: parsed.FEATURE_ALIASES ?? true,
+    FEATURE_BUDGETS: parsed.FEATURE_BUDGETS ?? true,
   };
 }
 

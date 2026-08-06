@@ -60,12 +60,17 @@ export async function handleChatNonStream(
   input: NormalizedChatRequest,
   deps: HandleChatDeps,
 ): Promise<HandleChatResultNonStream> {
-  const primary = resolveModel(deps.registry, input.model);
+  const aliasOpts = {
+    aliasesEnabled: deps.config.FEATURE_ALIASES,
+  };
+  const primary = resolveModel(deps.registry, input.model, aliasOpts);
+  // Serve under alias id when requested so clients see model they asked for
+  const logicalOut = primary.aliasRequested ?? primary.id;
   const attempts = buildAttemptPlan(
     primary,
     (id) => {
       try {
-        return resolveModel(deps.registry, id);
+        return resolveModel(deps.registry, id, aliasOpts);
       } catch {
         return undefined;
       }
@@ -109,17 +114,22 @@ export async function handleChatNonStream(
         signal: deps.signal,
       });
       recordAttempt(deps.metrics, result.provider, "success");
+      // Prefer alias as model_used label when primary was alias
+      const modelUsed =
+        attempt.logicalModel === primary.id && primary.aliasRequested
+          ? logicalOut
+          : result.modelUsed;
       deps.logger.info("chat_success", {
         request_id: deps.requestId,
-        model: result.modelUsed,
+        model: modelUsed,
         provider: result.provider,
         attempt: attempt.n,
         latency_ms: result.latencyMs,
         stream: false,
       });
       return {
-        completion: result.completion,
-        modelUsed: result.modelUsed,
+        completion: { ...result.completion, model: modelUsed },
+        modelUsed,
         provider: result.provider,
         endpointId: result.endpointId,
         attemptCount: attempt.n,
@@ -166,12 +176,14 @@ export async function handleChatStream(
   input: NormalizedChatRequest,
   deps: HandleChatDeps,
 ): Promise<HandleChatResultStream> {
-  const primary = resolveModel(deps.registry, input.model);
+  const aliasOpts = { aliasesEnabled: deps.config.FEATURE_ALIASES };
+  const primary = resolveModel(deps.registry, input.model, aliasOpts);
+  const logicalOut = primary.aliasRequested ?? primary.id;
   const attempts = buildAttemptPlan(
     primary,
     (id) => {
       try {
-        return resolveModel(deps.registry, id);
+        return resolveModel(deps.registry, id, aliasOpts);
       } catch {
         return undefined;
       }
@@ -210,15 +222,19 @@ export async function handleChatStream(
       });
       // Success opening upstream stream → commit (no more failover)
       recordAttempt(deps.metrics, result.provider, "success");
+      const modelUsed =
+        attempt.logicalModel === primary.id && primary.aliasRequested
+          ? logicalOut
+          : result.modelUsed;
       deps.logger.info("chat_stream_committed", {
         request_id: deps.requestId,
-        model: result.modelUsed,
+        model: modelUsed,
         provider: result.provider,
         attempt: attempt.n,
       });
       return {
-        stream: result.stream,
-        modelUsed: result.modelUsed,
+        stream: mapStreamModel(result.stream, modelUsed),
+        modelUsed,
         provider: result.provider,
         endpointId: result.endpointId,
         attemptCount: attempt.n,
@@ -272,4 +288,13 @@ function adapterFor(provider: string, apiKey: string, baseUrl: string): ChatAdap
     return createXaiAdapter({ apiKey, baseUrl });
   }
   return null;
+}
+
+async function* mapStreamModel(
+  stream: AsyncIterable<ChatCompletionChunk>,
+  model: string,
+): AsyncIterable<ChatCompletionChunk> {
+  for await (const chunk of stream) {
+    yield { ...chunk, model };
+  }
 }

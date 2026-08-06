@@ -1,8 +1,11 @@
 import { Redis } from "ioredis";
 import type { AppConfig } from "./config.js";
 import { resolveStoreDriver } from "./config.js";
+import type { BudgetStore } from "./db/budget-types.js";
+import { createMemoryBudgetStore } from "./db/memory-budget.js";
 import { createMemoryStores } from "./db/memory-store.js";
 import { createMemoryTenancyStore } from "./db/memory-tenancy.js";
+import { createPgBudgetStore } from "./db/pg-budget.js";
 import { createPgPool, createPgStores, migrate } from "./db/pg-store.js";
 import { createPgTenancyStore } from "./db/pg-tenancy.js";
 import type { KeyStore, UsageStore } from "./db/types.js";
@@ -19,6 +22,7 @@ export interface RuntimeStores {
   keys: KeyStore;
   usage: UsageStore;
   tenancy: TenancyStore;
+  budgets: BudgetStore;
   rateLimiter: RateLimiter;
   pool: pg.Pool | null;
   redis: Redis | null;
@@ -91,10 +95,16 @@ export async function bootstrapStores(
     logger.info("rate_limiter_memory");
   }
 
+  const budgets: BudgetStore =
+    driver === "postgres" && pool
+      ? createPgBudgetStore(pool, rateLimiter)
+      : createMemoryBudgetStore();
+
   return {
     keys,
     usage,
     tenancy,
+    budgets,
     rateLimiter,
     pool,
     redis,

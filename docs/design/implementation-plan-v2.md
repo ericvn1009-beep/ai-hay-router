@@ -4,7 +4,7 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V2) |
-| **Status** | In progress — V2.0–**V2.3** done (`v0.4.0`); next V2.4+ by priority |
+| **Status** | In progress — V2.0–**V2.4** done (`v0.4.1`); next V2.5 BYOK |
 | **Last updated** | 2026-08-06 |
 | **Based on** | [Architecture V2](./architecture-v2.md) · [Architecture V1](./architecture-v1.md) · [Product Spec](./product-spec.md) |
 | **Baseline code** | `apps/api` V1 gateway (Compose, keys, metering, OpenAI/Anthropic/xAI) |
@@ -355,10 +355,12 @@ docker compose logs api 2>&1 | grep request_complete
 
 #### Acceptance criteria
 
-- [ ] Alias works end-to-end with OpenAI SDK model string.  
-- [ ] Hard budget prevents further spend until reset/increase.  
-- [ ] V1 clients using canonical ids unaffected.  
-- [ ] Tag **`v0.4.1`**.
+- [x] Alias works end-to-end with OpenAI SDK model string.  
+- [x] Hard budget prevents further spend until reset/increase.  
+- [x] V1 clients using canonical ids unaffected.  
+- [x] Tag **`v0.4.1`**.
+
+**Shipped:** `FEATURE_ALIASES` / `FEATURE_BUDGETS`; default aliases (`aihay/cheap|balanced|smart|fast`); `budget_policies` + memory/pg stores; hard → 429 `budget_exceeded`; soft → log warn; control `GET|PUT /workspaces/:id/budget`; alias expansion in `/v1/models` + resolve before attempt plan.
 
 ---
 

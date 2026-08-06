@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { createMemoryBudgetStore } from "./db/memory-budget.js";
 import { createMemoryStores } from "./db/memory-store.js";
 import { createMemoryTenancyStore } from "./db/memory-tenancy.js";
 import { createLogger } from "./lib/logger.js";
@@ -19,6 +20,8 @@ function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
     FEATURE_METRICS: flags?.metrics === false ? "false" : "true",
     FEATURE_COMPLETION_LOGS: flags?.completionLogs === false ? "false" : "true",
     FEATURE_CONTROL_PLANE: "false",
+    FEATURE_ALIASES: "true",
+    FEATURE_BUDGETS: "true",
   } as unknown as NodeJS.ProcessEnv);
 
   const cfg = {
@@ -44,9 +47,12 @@ function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
     FEATURE_METRICS: flags?.metrics !== false,
     FEATURE_OTEL: false,
     FEATURE_CONTROL_PLANE: false,
+    FEATURE_ALIASES: true,
+    FEATURE_BUDGETS: true,
   };
   const mem = createMemoryStores(cfg.AIHAY_KEY_PEPPER);
   const tenancy = createMemoryTenancyStore(mem.keys);
+  const budgets = createMemoryBudgetStore();
   const metrics = cfg.FEATURE_METRICS ? createMetrics("aihay-api-test") : null;
   const app = createApp({
     config: cfg,
@@ -55,6 +61,7 @@ function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
     keys: mem.keys,
     usage: mem.usage,
     tenancy,
+    budgets,
     rateLimiter: createMemoryRateLimiter(),
     metrics,
   });

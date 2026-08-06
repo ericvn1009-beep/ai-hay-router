@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppConfig } from "./config.js";
 import { controlRoutes } from "./control/routes.js";
+import type { BudgetStore } from "./db/budget-types.js";
 import type { KeyStore, UsageStore } from "./db/types.js";
 import type { TenancyStore } from "./db/tenancy-types.js";
 import type { Logger } from "./lib/logger.js";
@@ -22,6 +23,7 @@ export interface AppDeps {
   keys: KeyStore;
   usage: UsageStore;
   tenancy: TenancyStore;
+  budgets: BudgetStore;
   rateLimiter: RateLimiter;
   metrics: Metrics | null;
   readyCheckDb?: () => Promise<boolean>;
@@ -49,6 +51,7 @@ export function createApp(deps: AppDeps) {
         keys: deps.keys,
         usage: deps.usage,
         tenancy: deps.tenancy,
+        budgets: deps.budgets,
         logger: deps.logger,
         sessionSecret: deps.config.SESSION_SECRET,
       }),
@@ -66,7 +69,7 @@ export function createApp(deps: AppDeps) {
       defaultRpm: deps.config.DEFAULT_RPM,
     }),
   );
-  api.route("/", modelsRoutes(deps.registry));
+  api.route("/", modelsRoutes(deps.registry, deps.config));
   api.route(
     "/",
     chatRoutes({
@@ -76,6 +79,7 @@ export function createApp(deps: AppDeps) {
       usage: deps.usage,
       rateLimiter: deps.rateLimiter,
       metrics: deps.metrics,
+      budgets: deps.budgets,
     }),
   );
 

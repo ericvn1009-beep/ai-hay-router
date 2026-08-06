@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
+import type { BudgetStore } from "../db/budget-types.js";
 import type { KeyStore, MembershipRole, UsageStore } from "../db/types.js";
 import type { TenancyStore } from "../db/tenancy-types.js";
 import { openaiError } from "../lib/errors.js";
@@ -21,6 +22,7 @@ export function controlRoutes(opts: {
   keys: KeyStore;
   usage: UsageStore;
   tenancy: TenancyStore;
+  budgets: BudgetStore;
   logger: Logger;
   sessionSecret: string;
 }) {
@@ -41,6 +43,7 @@ export function controlRoutes(opts: {
         "DELETE /control/v1/workspaces/:id/keys/:keyId",
         "GET /control/v1/workspaces/:id/usage",
         "GET /control/v1/workspaces/:id/usage/summary",
+        "GET|PUT /control/v1/workspaces/:id/budget",
         "GET|POST /control/v1/organizations/:orgId/members",
         "GET /control/v1/workspaces/:id/audit",
       ],
@@ -372,6 +375,71 @@ export function controlRoutes(opts: {
     await requireAccess(opts, user.id, workspaceId, "admin");
     const events = await opts.tenancy.listAudit({ workspaceId, limit: 100 });
     return c.json({ data: events });
+  });
+
+  secured.get("/workspaces/:id/budget", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    await requireAccess(opts, user.id, workspaceId, "viewer");
+    if (!opts.config.FEATURE_BUDGETS) {
+      return c.json({ enabled: false, policy: null, usage: null });
+    }
+    const policy = await opts.budgets.getPolicy(workspaceId);
+    const usage = await opts.budgets.getUsage(workspaceId);
+    return c.json({
+      enabled: true,
+      policy: policy
+        ? {
+            hard_cost_usd_daily: policy.hardCostUsdDaily,
+            soft_cost_usd_daily: policy.softCostUsdDaily,
+            hard_tokens_daily: policy.hardTokensDaily,
+            soft_tokens_daily: policy.softTokensDaily,
+            updated_at: policy.updatedAt,
+          }
+        : null,
+      usage,
+    });
+  });
+
+  secured.put("/workspaces/:id/budget", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    const access = await requireAccess(opts, user.id, workspaceId, "admin");
+    if (!opts.config.FEATURE_BUDGETS) {
+      throw openaiError(400, "Budgets feature is disabled", "feature_disabled");
+    }
+    const body = z
+      .object({
+        hard_cost_usd_daily: z.number().nonnegative().nullable().optional(),
+        soft_cost_usd_daily: z.number().nonnegative().nullable().optional(),
+        hard_tokens_daily: z.number().int().nonnegative().nullable().optional(),
+        soft_tokens_daily: z.number().int().nonnegative().nullable().optional(),
+      })
+      .parse(await c.req.json());
+
+    const policy = await opts.budgets.upsertPolicy(workspaceId, {
+      hardCostUsdDaily: body.hard_cost_usd_daily,
+      softCostUsdDaily: body.soft_cost_usd_daily,
+      hardTokensDaily: body.hard_tokens_daily,
+      softTokensDaily: body.soft_tokens_daily,
+    });
+    await opts.tenancy.insertAudit({
+      organizationId: access.organizationId,
+      workspaceId,
+      actorUserId: user.id,
+      action: "budget.updated",
+      resourceType: "budget_policy",
+      resourceId: policy.id,
+    });
+    return c.json({
+      policy: {
+        hard_cost_usd_daily: policy.hardCostUsdDaily,
+        soft_cost_usd_daily: policy.softCostUsdDaily,
+        hard_tokens_daily: policy.hardTokensDaily,
+        soft_tokens_daily: policy.softTokensDaily,
+        updated_at: policy.updatedAt,
+      },
+    });
   });
 
   // Critical: nest under /control/v1 so session middleware never sees /v1 data plane
