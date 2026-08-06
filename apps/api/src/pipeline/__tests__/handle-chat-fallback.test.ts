@@ -81,6 +81,8 @@ describe("handleChatNonStream fallback", () => {
           registry,
           logger: createLogger("error"),
           requestId: "test",
+          workspaceId: "dev-workspace",
+          secrets: null,
         },
       );
       expect(result.modelUsed).toBe("anthropic/b");

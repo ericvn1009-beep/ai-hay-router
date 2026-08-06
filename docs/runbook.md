@@ -70,6 +70,8 @@ cp .env.example .env
 | `OPENAI_API_KEY` | — | Platform key for OpenAI models |
 | `ANTHROPIC_API_KEY` | — | Platform key for Claude models |
 | `XAI_API_KEY` | — | Platform key for Grok models |
+| `FEATURE_BYOK` | `false` | Workspace-supplied provider keys (V2.5) |
+| `BYOK_MASTER_KEY` | — | AES master key (base64 32 bytes or 64-char hex). **Required in prod when BYOK on** |
 | `REQUEST_TIMEOUT_MS` | `120000` | Per-attempt upstream timeout |
 | `DEFAULT_MAX_TOKENS` | `4096` | Default and **clamp** for `max_tokens` |
 | `DEFAULT_RPM` | `60` | Per-key requests/minute if key has no override |
@@ -81,6 +83,7 @@ cp .env.example .env
 - Rotate `AIHAY_KEY_PEPPER` only with a full key re-issue (hashes become invalid).
 - Provider keys spend **your** money; keep RPM and token caps on.
 - Do not expose `AIHAY_DEV_KEY` on a public internet deployment.
+- **BYOK:** set a dedicated `BYOK_MASTER_KEY` before enabling multi-tenant BYOK; losing it means stored secrets cannot be decrypted (rotate by re-entering customer keys). Never log `api_key` bodies or decrypted material.
 
 ---
 
@@ -267,6 +270,38 @@ curl -s localhost:3000/v1/models -H "Authorization: Bearer sk-aihay-..."
 ```
 
 Catalog: `GET /control/v1`. Disable control plane: `FEATURE_CONTROL_PLANE=false`.
+
+### BYOK (V2.5)
+
+Credential resolution: **workspace BYOK → platform env → fail**. Usage + `request_complete` record `credential_mode: platform|byok`.
+
+```bash
+# Enable: FEATURE_BYOK=true and BYOK_MASTER_KEY=<32-byte secret>
+
+# Put OpenAI key for a workspace (session cookie)
+curl -s -b cookies.txt -X PUT \
+  "localhost:3000/control/v1/workspaces/$WS/providers/openai/secret" \
+  -H 'Content-Type: application/json' \
+  -d '{"api_key":"sk-..."}'
+# → { configured: true, key_hint: "…xxxx" }  — secret never returned
+
+# List (status only)
+curl -s -b cookies.txt "localhost:3000/control/v1/workspaces/$WS/providers"
+
+# Delete (falls back to platform keys)
+curl -s -b cookies.txt -X DELETE \
+  "localhost:3000/control/v1/workspaces/$WS/providers/openai/secret"
+```
+
+Dashboard: **BYOK** page at `/byok` (when web is running).
+
+**Ops notes**
+
+| Event | Action |
+| --- | --- |
+| Rotate master key | Generate new `BYOK_MASTER_KEY`; customers must re-save provider keys (old ciphertext unreadable) |
+| Customer key compromise | `DELETE` secret; revoke upstream key at provider |
+| Lost master key | Cannot recover ciphertext; wipe `provider_secrets` and re-onboard |
 
 ### Dashboard UI (V2.3)
 

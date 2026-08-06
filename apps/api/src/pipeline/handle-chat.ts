@@ -1,4 +1,6 @@
 import type { AppConfig } from "../config.js";
+import type { CredentialMode } from "../db/secret-types.js";
+import type { ProviderSecretStore } from "../db/secret-types.js";
 import { openaiError } from "../lib/errors.js";
 import type { Logger } from "../lib/logger.js";
 import type { Metrics } from "../observability/metrics.js";
@@ -20,12 +22,16 @@ import {
   executeStream,
   getProviderError,
 } from "./execute-attempt.js";
+import { resolveCredential } from "./resolve-credential.js";
 
 export interface HandleChatDeps {
   config: AppConfig;
   registry: Map<string, ModelRecord>;
   logger: Logger;
   requestId: string;
+  /** Workspace for BYOK resolution (V2.5) */
+  workspaceId: string;
+  secrets?: ProviderSecretStore | null;
   signal?: AbortSignal;
   metrics?: Metrics | null;
 }
@@ -45,6 +51,7 @@ export interface HandleChatResultNonStream {
   endpointId: string;
   attemptCount: number;
   latencyMs: number;
+  credentialMode: CredentialMode;
 }
 
 export interface HandleChatResultStream {
@@ -54,6 +61,7 @@ export interface HandleChatResultStream {
   endpointId: string;
   attemptCount: number;
   startedAt: number;
+  credentialMode: CredentialMode;
 }
 
 export async function handleChatNonStream(
@@ -85,8 +93,13 @@ export async function handleChatNonStream(
 
   let lastError: string | undefined;
   for (const attempt of attempts) {
-    const apiKey = credentialFor(attempt.credentialRef, deps.config);
-    if (!apiKey) {
+    const cred = await resolveCredential({
+      credentialRef: attempt.credentialRef,
+      workspaceId: deps.workspaceId,
+      config: deps.config,
+      secrets: deps.secrets ?? null,
+    });
+    if (!cred) {
       lastError = `Missing credential ${attempt.credentialRef}`;
       recordAttempt(deps.metrics, attempt.provider, "missing_credential");
       deps.logger.warn("skip_attempt_missing_credential", {
@@ -97,7 +110,7 @@ export async function handleChatNonStream(
       continue;
     }
 
-    const adapter = adapterFor(attempt.provider, apiKey, attempt.baseUrl);
+    const adapter = adapterFor(attempt.provider, cred.apiKey, attempt.baseUrl);
     if (!adapter) {
       lastError = `Unknown provider ${attempt.provider}`;
       continue;
@@ -109,7 +122,7 @@ export async function handleChatNonStream(
         attempt,
         input,
         requestId: deps.requestId,
-        apiKey,
+        apiKey: cred.apiKey,
         timeoutMs: deps.config.REQUEST_TIMEOUT_MS,
         signal: deps.signal,
       });
@@ -126,6 +139,7 @@ export async function handleChatNonStream(
         attempt: attempt.n,
         latency_ms: result.latencyMs,
         stream: false,
+        credential_mode: cred.mode,
       });
       return {
         completion: { ...result.completion, model: modelUsed },
@@ -134,6 +148,7 @@ export async function handleChatNonStream(
         endpointId: result.endpointId,
         attemptCount: attempt.n,
         latencyMs: result.latencyMs,
+        credentialMode: cred.mode,
       };
     } catch (e) {
       const pe = getProviderError(e);
@@ -198,13 +213,18 @@ export async function handleChatStream(
 
   let lastError: string | undefined;
   for (const attempt of attempts) {
-    const apiKey = credentialFor(attempt.credentialRef, deps.config);
-    if (!apiKey) {
+    const cred = await resolveCredential({
+      credentialRef: attempt.credentialRef,
+      workspaceId: deps.workspaceId,
+      config: deps.config,
+      secrets: deps.secrets ?? null,
+    });
+    if (!cred) {
       lastError = `Missing credential ${attempt.credentialRef}`;
       recordAttempt(deps.metrics, attempt.provider, "missing_credential");
       continue;
     }
-    const adapter = adapterFor(attempt.provider, apiKey, attempt.baseUrl);
+    const adapter = adapterFor(attempt.provider, cred.apiKey, attempt.baseUrl);
     if (!adapter) {
       lastError = `Unknown provider ${attempt.provider}`;
       continue;
@@ -216,7 +236,7 @@ export async function handleChatStream(
         attempt,
         input,
         requestId: deps.requestId,
-        apiKey,
+        apiKey: cred.apiKey,
         timeoutMs: deps.config.REQUEST_TIMEOUT_MS,
         signal: deps.signal,
       });
@@ -231,6 +251,7 @@ export async function handleChatStream(
         model: modelUsed,
         provider: result.provider,
         attempt: attempt.n,
+        credential_mode: cred.mode,
       });
       return {
         stream: mapStreamModel(result.stream, modelUsed),
@@ -239,6 +260,7 @@ export async function handleChatStream(
         endpointId: result.endpointId,
         attemptCount: attempt.n,
         startedAt: result.startedAt,
+        credentialMode: cred.mode,
       };
     } catch (e) {
       const pe = getProviderError(e) as ProviderError | undefined;
@@ -268,13 +290,6 @@ export async function handleChatStream(
     lastError ? `All upstream attempts failed: ${lastError}` : "All upstream attempts failed",
     "upstream_unavailable",
   );
-}
-
-function credentialFor(ref: string, config: AppConfig): string {
-  if (ref === "OPENAI_API_KEY") return config.OPENAI_API_KEY;
-  if (ref === "ANTHROPIC_API_KEY") return config.ANTHROPIC_API_KEY;
-  if (ref === "XAI_API_KEY") return config.XAI_API_KEY;
-  return process.env[ref] ?? "";
 }
 
 function adapterFor(provider: string, apiKey: string, baseUrl: string): ChatAdapter | null {

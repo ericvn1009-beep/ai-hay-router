@@ -21,6 +21,7 @@ export function buildUsageEvent(opts: {
   errorCode: string | null;
   attemptCount: number;
   modelRecord?: ModelRecord;
+  credentialMode?: "platform" | "byok" | null;
 }): UsageEventInput {
   return {
     requestId: opts.requestId,
@@ -43,6 +44,7 @@ export function buildUsageEvent(opts: {
     status: opts.status,
     errorCode: opts.errorCode,
     attemptCount: opts.attemptCount,
+    credentialMode: opts.credentialMode ?? null,
   };
 }
 

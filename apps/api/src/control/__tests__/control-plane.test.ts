@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../app.js";
 import { loadConfig } from "../../config.js";
+import { resolveMasterKey } from "../../crypto/byok.js";
 import { createMemoryBudgetStore } from "../../db/memory-budget.js";
+import { createMemorySecretStore } from "../../db/memory-secrets.js";
 import { createMemoryStores } from "../../db/memory-store.js";
 import { createMemoryTenancyStore } from "../../db/memory-tenancy.js";
 import { createLogger } from "../../lib/logger.js";
 import { createMemoryRateLimiter } from "../../lib/rate-limit.js";
-import { createMetrics, resetMetricsForTests } from "../../observability/metrics.js";
+import { resetMetricsForTests } from "../../observability/metrics.js";
 import { loadRegistryFromYaml } from "../../registry/load.js";
 
 function testApp() {
@@ -15,9 +17,11 @@ function testApp() {
     FEATURE_CONTROL_PLANE: "true",
     FEATURE_METRICS: "false",
     FEATURE_COMPLETION_LOGS: "false",
+    FEATURE_BYOK: "true",
     SESSION_SECRET: "test-session-secret",
     AIHAY_DEV_KEY: "sk-aihay-dev-local",
     AIHAY_KEY_PEPPER: "test-pepper",
+    BYOK_MASTER_KEY: "test-byok-master",
     STORE_DRIVER: "memory",
   } as unknown as NodeJS.ProcessEnv);
 
@@ -29,6 +33,8 @@ function testApp() {
     FEATURE_OTEL: false,
     FEATURE_ALIASES: true,
     FEATURE_BUDGETS: true,
+    FEATURE_BYOK: true,
+    BYOK_MASTER_KEY: "test-byok-master",
     SESSION_SECRET: "test-session-secret",
     AIHAY_DEV_KEY: "sk-aihay-dev-local",
     AIHAY_KEY_PEPPER: "test-pepper",
@@ -51,6 +57,9 @@ function testApp() {
   const mem = createMemoryStores(cfg.AIHAY_KEY_PEPPER);
   const tenancy = createMemoryTenancyStore(mem.keys);
   const budgets = createMemoryBudgetStore();
+  const secrets = createMemorySecretStore(
+    resolveMasterKey({ masterKey: cfg.BYOK_MASTER_KEY, pepper: cfg.AIHAY_KEY_PEPPER }),
+  );
   const app = createApp({
     config: cfg,
     registry: loadRegistryFromYaml(),
@@ -59,10 +68,11 @@ function testApp() {
     usage: mem.usage,
     tenancy,
     budgets,
+    secrets,
     rateLimiter: createMemoryRateLimiter(),
     metrics: null,
   });
-  return { app, mem, tenancy, budgets, cfg };
+  return { app, mem, tenancy, budgets, secrets, cfg };
 }
 
 function cookieFrom(res: Response): string {
@@ -209,5 +219,58 @@ describe("control plane", () => {
     });
     expect(login.status).toBe(200);
     expect(cookieFrom(login).startsWith("aihay_session=")).toBe(true);
+  });
+
+  it("BYOK put/list/delete never returns secret material", async () => {
+    const { app } = testApp();
+    const reg = await app.request("/control/v1/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "byok@example.com",
+        password: "password123",
+      }),
+    });
+    const { workspace_id } = (await reg.json()) as { workspace_id: string };
+    const cookie = cookieFrom(reg);
+
+    const put = await app.request(
+      `/control/v1/workspaces/${workspace_id}/providers/openai/secret`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ api_key: "sk-live-super-secret-key-xyz" }),
+      },
+    );
+    expect(put.status).toBe(200);
+    const putBody = await put.json();
+    expect(JSON.stringify(putBody)).not.toContain("sk-live-super-secret-key-xyz");
+    expect((putBody as { configured: boolean }).configured).toBe(true);
+    expect((putBody as { key_hint: string }).key_hint).toMatch(/…/);
+
+    const list = await app.request(`/control/v1/workspaces/${workspace_id}/providers`, {
+      headers: { Cookie: cookie },
+    });
+    expect(list.status).toBe(200);
+    const listBody = (await list.json()) as {
+      enabled: boolean;
+      providers: Array<{ provider: string; configured: boolean }>;
+    };
+    expect(listBody.enabled).toBe(true);
+    expect(listBody.providers.find((p) => p.provider === "openai")?.configured).toBe(true);
+    expect(JSON.stringify(listBody)).not.toContain("sk-live-super-secret-key-xyz");
+
+    const del = await app.request(
+      `/control/v1/workspaces/${workspace_id}/providers/openai/secret`,
+      { method: "DELETE", headers: { Cookie: cookie } },
+    );
+    expect(del.status).toBe(200);
+    const after = await app.request(`/control/v1/workspaces/${workspace_id}/providers`, {
+      headers: { Cookie: cookie },
+    });
+    const afterBody = (await after.json()) as {
+      providers: Array<{ provider: string; configured: boolean }>;
+    };
+    expect(afterBody.providers.find((p) => p.provider === "openai")?.configured).toBe(false);
   });
 });

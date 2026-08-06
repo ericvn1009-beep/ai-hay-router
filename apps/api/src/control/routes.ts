@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
+import { BYOK_PROVIDERS, isByokProvider } from "../crypto/byok.js";
 import type { BudgetStore } from "../db/budget-types.js";
+import type { ProviderSecretStore } from "../db/secret-types.js";
 import type { KeyStore, MembershipRole, UsageStore } from "../db/types.js";
 import type { TenancyStore } from "../db/tenancy-types.js";
 import { openaiError } from "../lib/errors.js";
@@ -23,6 +25,7 @@ export function controlRoutes(opts: {
   usage: UsageStore;
   tenancy: TenancyStore;
   budgets: BudgetStore;
+  secrets: ProviderSecretStore;
   logger: Logger;
   sessionSecret: string;
 }) {
@@ -44,6 +47,8 @@ export function controlRoutes(opts: {
         "GET /control/v1/workspaces/:id/usage",
         "GET /control/v1/workspaces/:id/usage/summary",
         "GET|PUT /control/v1/workspaces/:id/budget",
+        "GET /control/v1/workspaces/:id/providers",
+        "PUT|DELETE /control/v1/workspaces/:id/providers/:provider/secret",
         "GET|POST /control/v1/organizations/:orgId/members",
         "GET /control/v1/workspaces/:id/audit",
       ],
@@ -440,6 +445,104 @@ export function controlRoutes(opts: {
         updated_at: policy.updatedAt,
       },
     });
+  });
+
+  // V2.5 BYOK — never return secret material after save
+  secured.get("/workspaces/:id/providers", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    await requireAccess(opts, user.id, workspaceId, "viewer");
+    if (!opts.config.FEATURE_BYOK) {
+      return c.json({
+        enabled: false,
+        providers: BYOK_PROVIDERS.map((p) => ({
+          provider: p,
+          configured: false,
+          key_hint: null,
+        })),
+      });
+    }
+    const existing = await opts.secrets.list(workspaceId);
+    const byProvider = new Map(existing.map((s) => [s.provider, s]));
+    return c.json({
+      enabled: true,
+      providers: BYOK_PROVIDERS.map((p) => {
+        const meta = byProvider.get(p);
+        return {
+          provider: p,
+          configured: Boolean(meta),
+          key_hint: meta?.keyHint ?? null,
+          updated_at: meta?.updatedAt ?? null,
+        };
+      }),
+    });
+  });
+
+  secured.put("/workspaces/:id/providers/:provider/secret", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    const provider = c.req.param("provider");
+    const access = await requireAccess(opts, user.id, workspaceId, "admin");
+    if (!opts.config.FEATURE_BYOK) {
+      throw openaiError(400, "BYOK feature is disabled", "feature_disabled");
+    }
+    if (!isByokProvider(provider)) {
+      throw openaiError(400, `Unknown provider: ${provider}`, "invalid_provider");
+    }
+    const body = z
+      .object({
+        api_key: z.string().min(1).max(4096),
+      })
+      .parse(await c.req.json());
+
+    const meta = await opts.secrets.upsert(
+      workspaceId,
+      provider,
+      body.api_key,
+      user.id,
+    );
+    await opts.tenancy.insertAudit({
+      organizationId: access.organizationId,
+      workspaceId,
+      actorUserId: user.id,
+      action: "byok.secret_upserted",
+      resourceType: "provider_secret",
+      resourceId: meta.id,
+      meta: { provider },
+    });
+    // Never echo api_key
+    return c.json({
+      provider: meta.provider,
+      configured: true,
+      key_hint: meta.keyHint,
+      updated_at: meta.updatedAt,
+    });
+  });
+
+  secured.delete("/workspaces/:id/providers/:provider/secret", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    const provider = c.req.param("provider");
+    const access = await requireAccess(opts, user.id, workspaceId, "admin");
+    if (!opts.config.FEATURE_BYOK) {
+      throw openaiError(400, "BYOK feature is disabled", "feature_disabled");
+    }
+    if (!isByokProvider(provider)) {
+      throw openaiError(400, `Unknown provider: ${provider}`, "invalid_provider");
+    }
+    const ok = await opts.secrets.delete(workspaceId, provider);
+    if (ok) {
+      await opts.tenancy.insertAudit({
+        organizationId: access.organizationId,
+        workspaceId,
+        actorUserId: user.id,
+        action: "byok.secret_deleted",
+        resourceType: "provider_secret",
+        resourceId: provider,
+        meta: { provider },
+      });
+    }
+    return c.json({ ok, provider, configured: false });
   });
 
   // Critical: nest under /control/v1 so session middleware never sees /v1 data plane

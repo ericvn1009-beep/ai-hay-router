@@ -1,13 +1,17 @@
 import { Redis } from "ioredis";
 import type { AppConfig } from "./config.js";
 import { resolveStoreDriver } from "./config.js";
+import { resolveMasterKey } from "./crypto/byok.js";
 import type { BudgetStore } from "./db/budget-types.js";
 import { createMemoryBudgetStore } from "./db/memory-budget.js";
+import { createMemorySecretStore } from "./db/memory-secrets.js";
 import { createMemoryStores } from "./db/memory-store.js";
 import { createMemoryTenancyStore } from "./db/memory-tenancy.js";
 import { createPgBudgetStore } from "./db/pg-budget.js";
+import { createPgSecretStore } from "./db/pg-secrets.js";
 import { createPgPool, createPgStores, migrate } from "./db/pg-store.js";
 import { createPgTenancyStore } from "./db/pg-tenancy.js";
+import type { ProviderSecretStore } from "./db/secret-types.js";
 import type { KeyStore, UsageStore } from "./db/types.js";
 import type { TenancyStore } from "./db/tenancy-types.js";
 import type { Logger } from "./lib/logger.js";
@@ -23,6 +27,7 @@ export interface RuntimeStores {
   usage: UsageStore;
   tenancy: TenancyStore;
   budgets: BudgetStore;
+  secrets: ProviderSecretStore;
   rateLimiter: RateLimiter;
   pool: pg.Pool | null;
   redis: Redis | null;
@@ -100,11 +105,26 @@ export async function bootstrapStores(
       ? createPgBudgetStore(pool, rateLimiter)
       : createMemoryBudgetStore();
 
+  const masterKey = resolveMasterKey({
+    masterKey: config.BYOK_MASTER_KEY,
+    pepper: config.AIHAY_KEY_PEPPER,
+  });
+  if (config.FEATURE_BYOK && !config.BYOK_MASTER_KEY) {
+    logger.warn("byok_master_key_missing", {
+      note: "Using pepper-derived key; set BYOK_MASTER_KEY for production",
+    });
+  }
+  const secrets: ProviderSecretStore =
+    driver === "postgres" && pool
+      ? createPgSecretStore(pool, masterKey)
+      : createMemorySecretStore(masterKey);
+
   return {
     keys,
     usage,
     tenancy,
     budgets,
+    secrets,
     rateLimiter,
     pool,
     redis,

@@ -219,9 +219,9 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
           id, request_id, api_key_id, workspace_id, organization_id,
           model_requested, model_used, provider, endpoint_id,
           prompt_tokens, completion_tokens, cost_usd_estimate, usage_estimated,
-          latency_ms, ttft_ms, status, error_code, attempt_count
+          latency_ms, ttft_ms, status, error_code, attempt_count, credential_mode
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
         )`,
         [
           randomUUID(),
@@ -242,6 +242,7 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
           event.status,
           event.errorCode,
           event.attemptCount,
+          event.credentialMode ?? null,
         ],
       );
     },
@@ -273,6 +274,7 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
           status: row.status,
           errorCode: row.error_code,
           attemptCount: row.attempt_count,
+          credentialMode: row.credential_mode ?? null,
         }),
       );
     },

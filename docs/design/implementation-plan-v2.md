@@ -4,7 +4,7 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V2) |
-| **Status** | In progress — V2.0–**V2.4** done (`v0.4.1`); next V2.5 BYOK |
+| **Status** | In progress — V2.0–**V2.5** done (`v0.5.0`); next V2.6 credits or V2.7 tools/vision |
 | **Last updated** | 2026-08-06 |
 | **Based on** | [Architecture V2](./architecture-v2.md) · [Architecture V1](./architecture-v1.md) · [Product Spec](./product-spec.md) |
 | **Baseline code** | `apps/api` V1 gateway (Compose, keys, metering, OpenAI/Anthropic/xAI) |
@@ -383,10 +383,12 @@ docker compose logs api 2>&1 | grep request_complete
 
 #### Acceptance criteria
 
-- [ ] Workspace A BYOK cannot be used by workspace B.  
-- [ ] Removing BYOK falls back to platform if configured.  
-- [ ] Secrets never appear in logs/metrics.  
-- [ ] Tag **`v0.5.0`**.
+- [x] Workspace A BYOK cannot be used by workspace B.  
+- [x] Removing BYOK falls back to platform if configured.  
+- [x] Secrets never appear in logs/metrics.  
+- [x] Tag **`v0.5.0`**.
+
+**Shipped:** AES-256-GCM + `BYOK_MASTER_KEY`; `provider_secrets` migration 005; memory/pg stores; resolve order BYOK→platform; `credential_mode` on usage + completion logs; control `GET /providers` + `PUT|DELETE .../secret`; dashboard `/byok`; `FEATURE_BYOK` default off; runbook rotation notes.
 
 ---
 

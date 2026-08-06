@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { AppConfig } from "../config.js";
 import type { BudgetStore } from "../db/budget-types.js";
+import type { ProviderSecretStore } from "../db/secret-types.js";
 import type { UsageStore } from "../db/types.js";
 import { AppError, openaiError } from "../lib/errors.js";
 import type { Logger } from "../lib/logger.js";
@@ -28,6 +29,7 @@ export function chatRoutes(opts: {
   rateLimiter: RateLimiter;
   metrics: Metrics | null;
   budgets: BudgetStore | null;
+  secrets: ProviderSecretStore | null;
 }) {
   const r = new Hono();
 
@@ -41,15 +43,15 @@ export function chatRoutes(opts: {
       partial: Omit<
         RequestCompleteEvent,
         "request_id" | "workspace_id" | "api_key_id" | "route" | "credential_mode"
-      >,
+      > & { credential_mode?: RequestCompleteEvent["credential_mode"] },
     ) => {
       const event: RequestCompleteEvent = {
         request_id: requestId,
         workspace_id: apiKey.workspaceId,
         api_key_id: apiKey.id,
         route: ROUTE,
-        credential_mode: "platform",
         ...partial,
+        credential_mode: partial.credential_mode ?? "platform",
       };
       logRequestComplete(opts.logger, opts.config.FEATURE_COMPLETION_LOGS, event);
       recordRequestCompleteMetrics(opts.metrics, event);
@@ -151,6 +153,8 @@ export function chatRoutes(opts: {
           registry: opts.registry,
           logger: opts.logger,
           requestId,
+          workspaceId: apiKey.workspaceId,
+          secrets: opts.secrets,
           signal,
           metrics: opts.metrics,
         });
@@ -265,6 +269,7 @@ export function chatRoutes(opts: {
             errorCode,
             attemptCount: result.attemptCount,
             modelRecord: usedModel,
+            credentialMode: result.credentialMode,
           });
           enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
           trackBudget(usage.costUsdEstimate, promptTokens + completionTokens);
@@ -282,6 +287,7 @@ export function chatRoutes(opts: {
             completion_tokens: completionTokens,
             cost_usd_estimate: usage.costUsdEstimate,
             error_code: errorCode,
+            credential_mode: result.credentialMode,
           });
         }
       });
@@ -293,6 +299,8 @@ export function chatRoutes(opts: {
         registry: opts.registry,
         logger: opts.logger,
         requestId,
+        workspaceId: apiKey.workspaceId,
+        secrets: opts.secrets,
         signal,
         metrics: opts.metrics,
       });
@@ -320,6 +328,7 @@ export function chatRoutes(opts: {
         errorCode: null,
         attemptCount: result.attemptCount,
         modelRecord: usedModel,
+        credentialMode: result.credentialMode,
       });
       enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
       trackBudget(usage.costUsdEstimate, promptTokens + completionTokens);
@@ -337,10 +346,12 @@ export function chatRoutes(opts: {
         completion_tokens: completionTokens,
         cost_usd_estimate: usage.costUsdEstimate,
         error_code: null,
+        credential_mode: result.credentialMode,
       });
 
       c.header("x-aihay-model", result.modelUsed);
       c.header("x-aihay-provider", result.provider);
+      c.header("x-aihay-credential-mode", result.credentialMode);
       c.header("x-request-id", requestId);
 
       return c.json(result.completion);

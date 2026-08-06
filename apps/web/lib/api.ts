@@ -123,4 +123,31 @@ export const api = {
         cost: number;
       }>;
     }>(`/workspaces/${workspaceId}/usage/summary`),
+
+  listProviders: (workspaceId: string) =>
+    control<{
+      enabled: boolean;
+      providers: Array<{
+        provider: string;
+        configured: boolean;
+        key_hint: string | null;
+        updated_at?: string | null;
+      }>;
+    }>(`/workspaces/${workspaceId}/providers`),
+
+  putProviderSecret: (workspaceId: string, provider: string, apiKey: string) =>
+    control<{
+      provider: string;
+      configured: boolean;
+      key_hint: string;
+    }>(`/workspaces/${workspaceId}/providers/${provider}/secret`, {
+      method: "PUT",
+      body: JSON.stringify({ api_key: apiKey }),
+    }),
+
+  deleteProviderSecret: (workspaceId: string, provider: string) =>
+    control<{ ok: boolean; provider: string; configured: boolean }>(
+      `/workspaces/${workspaceId}/providers/${provider}/secret`,
+      { method: "DELETE" },
+    ),
 };

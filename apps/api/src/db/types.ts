@@ -70,6 +70,8 @@ export interface UsageEventInput {
   status: "success" | "error" | "aborted";
   errorCode: string | null;
   attemptCount: number;
+  /** platform | byok — set when known (V2.5+) */
+  credentialMode?: "platform" | "byok" | null;
 }
 
 export interface KeyStore {

@@ -36,6 +36,9 @@ const envSchema = z.object({
   FEATURE_CONTROL_PLANE: boolish,
   FEATURE_ALIASES: boolish,
   FEATURE_BUDGETS: boolish,
+  FEATURE_BYOK: boolish,
+  /** Base64 (32 bytes) or 64-char hex AES master key; falls back to pepper-derived key in dev */
+  BYOK_MASTER_KEY: z.string().optional().default(""),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
@@ -45,6 +48,7 @@ export type AppConfig = z.infer<typeof envSchema> & {
   FEATURE_CONTROL_PLANE: boolean;
   FEATURE_ALIASES: boolean;
   FEATURE_BUDGETS: boolean;
+  FEATURE_BYOK: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -57,6 +61,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     FEATURE_CONTROL_PLANE: parsed.FEATURE_CONTROL_PLANE ?? true,
     FEATURE_ALIASES: parsed.FEATURE_ALIASES ?? true,
     FEATURE_BUDGETS: parsed.FEATURE_BUDGETS ?? true,
+    FEATURE_BYOK: parsed.FEATURE_BYOK ?? false,
   };
 }
 

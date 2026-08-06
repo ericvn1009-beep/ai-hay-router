@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { resolveMasterKey } from "./crypto/byok.js";
 import { createMemoryBudgetStore } from "./db/memory-budget.js";
+import { createMemorySecretStore } from "./db/memory-secrets.js";
 import { createMemoryStores } from "./db/memory-store.js";
 import { createMemoryTenancyStore } from "./db/memory-tenancy.js";
 import { createLogger } from "./lib/logger.js";
@@ -22,6 +24,7 @@ function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
     FEATURE_CONTROL_PLANE: "false",
     FEATURE_ALIASES: "true",
     FEATURE_BUDGETS: "true",
+    FEATURE_BYOK: "true",
   } as unknown as NodeJS.ProcessEnv);
 
   const cfg = {
@@ -49,10 +52,15 @@ function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
     FEATURE_CONTROL_PLANE: false,
     FEATURE_ALIASES: true,
     FEATURE_BUDGETS: true,
+    FEATURE_BYOK: true,
+    BYOK_MASTER_KEY: "test-byok-master",
   };
   const mem = createMemoryStores(cfg.AIHAY_KEY_PEPPER);
   const tenancy = createMemoryTenancyStore(mem.keys);
   const budgets = createMemoryBudgetStore();
+  const secrets = createMemorySecretStore(
+    resolveMasterKey({ masterKey: cfg.BYOK_MASTER_KEY, pepper: cfg.AIHAY_KEY_PEPPER }),
+  );
   const metrics = cfg.FEATURE_METRICS ? createMetrics("aihay-api-test") : null;
   const app = createApp({
     config: cfg,
@@ -62,6 +70,7 @@ function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
     usage: mem.usage,
     tenancy,
     budgets,
+    secrets,
     rateLimiter: createMemoryRateLimiter(),
     metrics,
   });
