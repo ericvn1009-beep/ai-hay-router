@@ -106,6 +106,10 @@ pnpm spike:chat --provider openai --model gpt-4o-mini
 - Model fallback primary reliability path
 - Meter one usage row per terminal request
 
+## Ops
+
+- **[Runbook](./docs/runbook.md)** — start, configure, keys, health, troubleshooting, incidents
+
 ## Design docs
 
 | Doc | Role |
@@ -113,6 +117,7 @@ pnpm spike:chat --provider openai --model gpt-4o-mini
 | [Product Spec](./docs/design/product-spec.md) | What / why |
 | [Architecture V1](./docs/design/architecture-v1.md) | System design |
 | [Implementation Plan V1](./docs/design/implementation-plan-v1.md) | Phases + testing strategy |
+| [Runbook](./docs/runbook.md) | Operate and debug V1 |
 
 ## Research
 
