@@ -3,7 +3,55 @@
 **AI Hay Router** — a unified multi-model LLM API (gateway + simple routing).  
 V1 target: OpenAI-compatible chat, CLI-issued keys, OpenAI + Anthropic adapters, metering, model fallbacks, Docker Compose self-host.
 
-> Design docs are **ready to build**. Application code is not started yet; follow the implementation plan.
+## Status
+
+| Phase | Status |
+| --- | --- |
+| Design docs | Done |
+| **Phase 0** — adapters spike | **In progress / scaffolded** |
+| **Phase 1a** — Hono API + streaming | **Scaffolded** (dev key auth) |
+| Phase 1b+ — keys, metering, Docker | Not started |
+
+## Dev quickstart (local)
+
+```bash
+# requires Node 22+ and pnpm
+pnpm install
+cp .env.example .env   # set OPENAI_API_KEY / ANTHROPIC_API_KEY for live calls
+
+# unit tests (no network)
+pnpm test
+
+# spike a single provider (needs live key)
+pnpm spike:chat --provider openai --model gpt-4o-mini
+
+# run API (Phase 1a: Authorization: Bearer $AIHAY_DEV_KEY)
+pnpm dev
+```
+
+```bash
+curl -s http://localhost:3000/health
+curl -s http://localhost:3000/v1/models \
+  -H "Authorization: Bearer sk-aihay-dev-local"
+
+curl -s http://localhost:3000/v1/chat/completions \
+  -H "Authorization: Bearer sk-aihay-dev-local" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o-mini",
+    "messages": [{"role":"user","content":"hi"}],
+    "stream": false
+  }'
+```
+
+```ts
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://localhost:3000/v1",
+  apiKey: process.env.AIHAY_DEV_KEY ?? "sk-aihay-dev-local",
+});
+```
 
 ## Design (start here)
 

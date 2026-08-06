@@ -1,0 +1,65 @@
+# AI Hay model registry (V1 seed)
+models:
+  - id: openai/gpt-4o-mini
+    provider: openai
+    upstream_id: gpt-4o-mini
+    context_length: 128000
+    supports_tools: false
+    supports_streaming: true
+    input_price_per_mtok: 0.15
+    output_price_per_mtok: 0.6
+    active: true
+    endpoints:
+      - id: openai-primary
+        base_url: https://api.openai.com/v1
+        credential_ref: OPENAI_API_KEY
+        priority: 1
+    fallback_models: []
+
+  - id: openai/gpt-4o
+    provider: openai
+    upstream_id: gpt-4o
+    context_length: 128000
+    supports_tools: false
+    supports_streaming: true
+    input_price_per_mtok: 2.5
+    output_price_per_mtok: 10
+    active: true
+    endpoints:
+      - id: openai-primary
+        base_url: https://api.openai.com/v1
+        credential_ref: OPENAI_API_KEY
+        priority: 1
+    fallback_models: []
+
+  - id: anthropic/claude-3-5-haiku-latest
+    provider: anthropic
+    upstream_id: claude-3-5-haiku-latest
+    context_length: 200000
+    supports_tools: false
+    supports_streaming: true
+    input_price_per_mtok: 0.8
+    output_price_per_mtok: 4
+    active: true
+    endpoints:
+      - id: anthropic-primary
+        base_url: https://api.anthropic.com
+        credential_ref: ANTHROPIC_API_KEY
+        priority: 1
+    fallback_models: []
+
+  - id: anthropic/claude-sonnet-4-0
+    provider: anthropic
+    upstream_id: claude-sonnet-4-0
+    context_length: 200000
+    supports_tools: false
+    supports_streaming: true
+    input_price_per_mtok: 3
+    output_price_per_mtok: 15
+    active: true
+    endpoints:
+      - id: anthropic-primary
+        base_url: https://api.anthropic.com
+        credential_ref: ANTHROPIC_API_KEY
+        priority: 1
+    fallback_models: []
