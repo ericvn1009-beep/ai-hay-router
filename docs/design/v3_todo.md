@@ -6,7 +6,7 @@
 | **Document type** | Forward backlog (V3) |
 | **Status** | Open — not scheduled |
 | **Baseline** | Shipped product **`v0.7.0`** (gateway + tenant control plane + thin dashboard) |
-| **Last updated** | 2026-08-06 (ops: Compose Prometheus + Grafana) |
+| **Last updated** | 2026-08-06 (detailed token usage types) |
 | **Related** | [Runbook](../runbook.md) · [Architecture](./architecture-v2.md) · [README](../../README.md) |
 
 Work **not** in the current product surface. Order below is intentional priority for planning; nothing here is committed until an implementation plan is cut.
@@ -144,7 +144,37 @@ Add observability services (prefer a Compose **profile**, e.g. `observability`, 
 - [ ] Logged-in user can open Models and see every active registry id + alias without calling the data plane with an API key  
 - [ ] Catalog matches `GET /v1/models` for the same deployment flags (e.g. aliases on/off)  
 
-### 3.3 Other tenant UI polish
+### 3.3 Detailed token usage types (metering + API + UI)
+
+**Gap:** Ledger and metrics only store coarse **prompt_tokens** + **completion_tokens**. Providers increasingly return richer usage (cache, reasoning, audio, image, tool, etc.). Cost and budgets stay inaccurate without a breakdown.
+
+**Today:** `usage_events.prompt_tokens` / `completion_tokens`; Prometheus `aihay_tokens_total{direction=prompt|completion}`.
+
+- [ ] Define a **normalized usage breakdown** model (provider-agnostic), e.g.:  
+  - input / output (existing)  
+  - **cached_input** (prompt cache read/write if reported)  
+  - **reasoning** / “thinking” output tokens  
+  - **image** / multimodal input tokens (when counted separately)  
+  - **audio** input/output (if ever supported)  
+  - **tool** / function-related tokens if exposed  
+  - **total** (canonical sum; never double-count)  
+- [ ] Parse provider-specific usage shapes (OpenAI `prompt_tokens_details` / `completion_tokens_details`, Anthropic cache + extended fields, xAI equivalents) into the normalized model  
+- [ ] Persist breakdown on **usage_events** (JSON column and/or explicit columns; migration)  
+- [ ] Emit richer **request_complete** fields and Prometheus labels/series (without label cardinality explosion)  
+- [ ] Cost estimator: price **cached** vs uncached input; reasoning/output rates when registry has tiers  
+- [ ] Budgets / credits: document whether hard caps use **billable total** or raw total tokens  
+- [ ] Control API + tenant **Usage** UI: show breakdown columns / drill-down per request  
+- [ ] Platform admin / Grafana: optional rollups by token type  
+- [ ] Pass-through OpenAI-compatible `usage` object to clients when possible (don’t strip detail)  
+- [ ] Tests: fixtures per provider for detailed usage; unknown fields ignored safely  
+
+**Acceptance (draft)**
+
+- [ ] A completion that returns cache/reasoning details stores them and shows them in usage API/UI  
+- [ ] Models that only return prompt+completion keep working (null/zero extras)  
+- [ ] Cost estimate uses breakdown when prices differ by token class  
+
+### 3.4 Other tenant UI polish
 
 - [ ] Tenant UI: budgets form, members/invites, audit page, workspace switcher  
 - [ ] Stripe Checkout (or equivalent) for self-serve credit top-up  
