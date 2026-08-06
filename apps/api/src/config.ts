@@ -20,6 +20,8 @@ const envSchema = z.object({
   /** Dev-only bypass key when STORE_DRIVER=memory (or always accepted if set and matches). */
   AIHAY_DEV_KEY: z.string().default("sk-aihay-dev-local"),
   AIHAY_KEY_PEPPER: z.string().default("dev-pepper-change-me"),
+  /** Signs control-plane session cookies */
+  SESSION_SECRET: z.string().default("dev-session-secret-change-me"),
   DATABASE_URL: z.string().optional().default(""),
   REDIS_URL: z.string().optional().default(""),
   /** memory | postgres — auto: postgres if DATABASE_URL set */
@@ -32,16 +34,18 @@ const envSchema = z.object({
   DEFAULT_MAX_TOKENS: z.coerce.number().default(4096),
   MAX_ATTEMPTS: z.coerce.number().default(3),
   DEFAULT_RPM: z.coerce.number().default(60),
-  /** V2.0 feature flags */
+  /** Feature flags */
   FEATURE_COMPLETION_LOGS: boolish,
   FEATURE_METRICS: boolish,
   FEATURE_OTEL: boolish,
+  FEATURE_CONTROL_PLANE: boolish,
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
   FEATURE_COMPLETION_LOGS: boolean;
   FEATURE_METRICS: boolean;
   FEATURE_OTEL: boolean;
+  FEATURE_CONTROL_PLANE: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -51,6 +55,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     FEATURE_COMPLETION_LOGS: parsed.FEATURE_COMPLETION_LOGS ?? true,
     FEATURE_METRICS: parsed.FEATURE_METRICS ?? true,
     FEATURE_OTEL: parsed.FEATURE_OTEL ?? false,
+    FEATURE_CONTROL_PLANE: parsed.FEATURE_CONTROL_PLANE ?? true,
   };
 }
 

@@ -4,7 +4,7 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V2) |
-| **Status** | In progress — V2.0 + **V2.1 tenancy** done (`v0.2.1`); next **V2.2 control plane API** |
+| **Status** | In progress — V2.0–**V2.2** done (`v0.3.0`); next **V2.3 dashboard** |
 | **Last updated** | 2026-08-06 |
 | **Based on** | [Architecture V2](./architecture-v2.md) · [Architecture V1](./architecture-v1.md) · [Product Spec](./product-spec.md) |
 | **Baseline code** | `apps/api` V1 gateway (Compose, keys, metering, OpenAI/Anthropic/xAI) |
@@ -288,11 +288,11 @@ docker compose logs api 2>&1 | grep request_complete
 
 #### Acceptance criteria
 
-- [ ] Data plane `/v1/*` still key-only; no session required.  
-- [ ] Control plane rejects API keys as auth (or clearly separate scheme).  
-- [ ] Create key via control API → use key on `/v1/chat/completions` successfully.  
-- [ ] Role tests green.  
-- [ ] Tag **`v0.3.0`**.
+- [x] Data plane `/v1/*` still key-only; no session required.  
+- [x] Control plane rejects API keys as auth (session cookie / separate scheme).  
+- [x] Create key via control API → use key on data plane successfully.  
+- [x] Role tests green (viewer cannot create keys).  
+- [x] Tag **`v0.3.0`**.
 
 #### Suggested control routes (initial)
 

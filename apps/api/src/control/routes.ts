@@ -1,0 +1,393 @@
+import { Hono } from "hono";
+import { z } from "zod";
+import type { AppConfig } from "../config.js";
+import type { KeyStore, MembershipRole, UsageStore } from "../db/types.js";
+import type { TenancyStore } from "../db/tenancy-types.js";
+import { openaiError } from "../lib/errors.js";
+import type { Logger } from "../lib/logger.js";
+import { canAdminWorkspace, canInvite, canManageKeys, roleAtLeast } from "../lib/roles.js";
+import {
+  clearSessionCookieHeader,
+  sessionCookieHeader,
+  signSession,
+} from "../lib/session.js";
+import { createSessionAuthMiddleware } from "../middleware/session-auth.js";
+import { loginUser, registerUser } from "./auth-service.js";
+
+const SESSION_DAYS = 14;
+
+export function controlRoutes(opts: {
+  config: AppConfig;
+  keys: KeyStore;
+  usage: UsageStore;
+  tenancy: TenancyStore;
+  logger: Logger;
+  sessionSecret: string;
+}) {
+  const r = new Hono();
+
+  // Public control endpoints (full paths so they never steal /v1/*)
+  r.get("/control/v1", (c) =>
+    c.json({
+      name: "AI Hay Control Plane",
+      version: "v1",
+      endpoints: [
+        "POST /control/v1/auth/register",
+        "POST /control/v1/auth/login",
+        "POST /control/v1/auth/logout",
+        "GET /control/v1/me",
+        "GET|POST /control/v1/workspaces",
+        "GET|POST /control/v1/workspaces/:id/keys",
+        "DELETE /control/v1/workspaces/:id/keys/:keyId",
+        "GET /control/v1/workspaces/:id/usage",
+        "GET /control/v1/workspaces/:id/usage/summary",
+        "GET|POST /control/v1/organizations/:orgId/members",
+        "GET /control/v1/workspaces/:id/audit",
+      ],
+    }),
+  );
+
+  r.post("/control/v1/auth/register", async (c) => {
+    const body = z
+      .object({
+        email: z.string().email(),
+        password: z.string().min(8),
+        name: z.string().optional(),
+      })
+      .parse(await c.req.json());
+
+    const result = await registerUser(opts.tenancy, opts.keys, body);
+    const token = signSession(
+      {
+        userId: result.user.id,
+        email: result.user.email,
+        exp: Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400,
+      },
+      opts.sessionSecret,
+    );
+    c.header("Set-Cookie", sessionCookieHeader(token, SESSION_DAYS * 86400));
+    return c.json({
+      user: result.user,
+      organization_id: result.organizationId,
+      workspace_id: result.workspaceId,
+    });
+  });
+
+  r.post("/control/v1/auth/login", async (c) => {
+    const body = z
+      .object({
+        email: z.string().email(),
+        password: z.string().min(1),
+      })
+      .parse(await c.req.json());
+    const user = await loginUser(opts.tenancy, body);
+    const token = signSession(
+      {
+        userId: user.id,
+        email: user.email,
+        exp: Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400,
+      },
+      opts.sessionSecret,
+    );
+    c.header("Set-Cookie", sessionCookieHeader(token, SESSION_DAYS * 86400));
+    return c.json({ user });
+  });
+
+  r.post("/control/v1/auth/logout", (c) => {
+    c.header("Set-Cookie", clearSessionCookieHeader());
+    return c.json({ ok: true });
+  });
+
+  // Session-protected routes mounted ONLY under /control/v1
+  const secured = new Hono();
+  secured.use(
+    "*",
+    createSessionAuthMiddleware({
+      sessionSecret: opts.sessionSecret,
+      tenancy: opts.tenancy,
+    }),
+  );
+
+  secured.get("/me", async (c) => {
+    const user = c.get("controlUser");
+    const memberships = await opts.tenancy.listMembershipsForUser(user.id);
+    const workspaces = [];
+    for (const m of memberships) {
+      const ws = await opts.keys.listWorkspaces(m.organizationId);
+      for (const w of ws) {
+        workspaces.push({
+          id: w.id,
+          name: w.name,
+          slug: w.slug,
+          organization_id: m.organizationId,
+          role: m.role,
+        });
+      }
+    }
+    return c.json({ user, memberships, workspaces });
+  });
+
+  secured.get("/workspaces", async (c) => {
+    const user = c.get("controlUser");
+    const memberships = await opts.tenancy.listMembershipsForUser(user.id);
+    const out = [];
+    for (const m of memberships) {
+      const list = await opts.keys.listWorkspaces(m.organizationId);
+      for (const w of list) {
+        out.push({
+          id: w.id,
+          name: w.name,
+          slug: w.slug,
+          organization_id: w.organizationId,
+          role: m.role,
+          created_at: w.createdAt,
+        });
+      }
+    }
+    return c.json({ data: out });
+  });
+
+  secured.post("/workspaces", async (c) => {
+    const user = c.get("controlUser");
+    const body = z
+      .object({
+        name: z.string().min(1),
+        organization_id: z.string().uuid().optional(),
+      })
+      .parse(await c.req.json());
+
+    const memberships = await opts.tenancy.listMembershipsForUser(user.id);
+    const orgId =
+      body.organization_id ??
+      memberships.find((m) => roleAtLeast(m.role, "admin"))?.organizationId;
+    if (!orgId) {
+      throw openaiError(403, "No organization with admin access", "forbidden");
+    }
+    const m = await opts.tenancy.getMembership(orgId, user.id);
+    if (!m || !canAdminWorkspace(m.role)) {
+      throw openaiError(403, "Admin role required", "forbidden");
+    }
+    const ws = await opts.keys.createWorkspace({
+      name: body.name,
+      organizationId: orgId,
+    });
+    await opts.tenancy.insertAudit({
+      organizationId: orgId,
+      workspaceId: ws.id,
+      actorUserId: user.id,
+      action: "workspace.created",
+      resourceType: "workspace",
+      resourceId: ws.id,
+    });
+    return c.json({ workspace: ws }, 201);
+  });
+
+  secured.get("/workspaces/:id/keys", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    await requireAccess(opts, user.id, workspaceId, "viewer");
+    const keys = await opts.keys.listKeys({ workspaceId });
+    return c.json({
+      data: keys.map((k) => ({
+        id: k.id,
+        name: k.name,
+        prefix: k.keyPrefix,
+        workspace_id: k.workspaceId,
+        revoked: Boolean(k.revokedAt),
+        rate_limit_rpm: k.rateLimitRpm,
+        created_at: k.createdAt,
+      })),
+    });
+  });
+
+  secured.post("/workspaces/:id/keys", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    const access = await requireAccess(opts, user.id, workspaceId, "member");
+    if (!canManageKeys(access.role)) {
+      throw openaiError(403, "Member role required to create keys", "forbidden");
+    }
+    const body = z
+      .object({
+        name: z.string().min(1),
+        rate_limit_rpm: z.number().int().positive().optional(),
+      })
+      .parse(await c.req.json());
+
+    const created = await opts.keys.createKey({
+      name: body.name,
+      workspaceId,
+      createdByUserId: user.id,
+      rateLimitRpm: body.rate_limit_rpm ?? null,
+    });
+    await opts.tenancy.insertAudit({
+      organizationId: access.organizationId,
+      workspaceId,
+      actorUserId: user.id,
+      action: "api_key.created",
+      resourceType: "api_key",
+      resourceId: created.record.id,
+      meta: { name: body.name, prefix: created.record.keyPrefix },
+    });
+    return c.json(
+      {
+        id: created.record.id,
+        name: created.record.name,
+        prefix: created.record.keyPrefix,
+        workspace_id: created.record.workspaceId,
+        secret: created.secret,
+      },
+      201,
+    );
+  });
+
+  secured.delete("/workspaces/:id/keys/:keyId", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    const keyId = c.req.param("keyId");
+    const access = await requireAccess(opts, user.id, workspaceId, "member");
+    if (!canManageKeys(access.role)) {
+      throw openaiError(403, "Member role required to revoke keys", "forbidden");
+    }
+    const keys = await opts.keys.listKeys({ workspaceId });
+    const key = keys.find((k) => k.id === keyId);
+    if (!key) throw openaiError(404, "Key not found", "not_found");
+    await opts.keys.revokeByPrefix(key.keyPrefix, { workspaceId });
+    await opts.tenancy.insertAudit({
+      organizationId: access.organizationId,
+      workspaceId,
+      actorUserId: user.id,
+      action: "api_key.revoked",
+      resourceType: "api_key",
+      resourceId: keyId,
+    });
+    return c.json({ ok: true });
+  });
+
+  secured.get("/workspaces/:id/usage", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    await requireAccess(opts, user.id, workspaceId, "viewer");
+    const limit = Number(c.req.query("limit") ?? "50");
+    const rows = await opts.usage.listByWorkspace(workspaceId, Math.min(limit, 200));
+    return c.json({
+      data: rows.map((e) => ({
+        request_id: e.requestId,
+        model_requested: e.modelRequested,
+        model_used: e.modelUsed,
+        provider: e.provider,
+        prompt_tokens: e.promptTokens,
+        completion_tokens: e.completionTokens,
+        cost_usd_estimate: e.costUsdEstimate,
+        status: e.status,
+        latency_ms: e.latencyMs,
+        attempt_count: e.attemptCount,
+        error_code: e.errorCode,
+      })),
+    });
+  });
+
+  secured.get("/workspaces/:id/usage/summary", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    await requireAccess(opts, user.id, workspaceId, "viewer");
+    const rows = await opts.usage.listByWorkspace(workspaceId, 1000);
+    const byModel = new Map<string, { requests: number; tokens: number; cost: number }>();
+    let totalCost = 0;
+    let totalTokens = 0;
+    for (const e of rows) {
+      const tokens = e.promptTokens + e.completionTokens;
+      totalTokens += tokens;
+      totalCost += e.costUsdEstimate;
+      const cur = byModel.get(e.modelUsed) ?? { requests: 0, tokens: 0, cost: 0 };
+      cur.requests += 1;
+      cur.tokens += tokens;
+      cur.cost += e.costUsdEstimate;
+      byModel.set(e.modelUsed, cur);
+    }
+    return c.json({
+      total_requests: rows.length,
+      total_tokens: totalTokens,
+      total_cost_usd_estimate: totalCost,
+      by_model: [...byModel.entries()].map(([model, v]) => ({ model, ...v })),
+    });
+  });
+
+  secured.get("/organizations/:orgId/members", async (c) => {
+    const user = c.get("controlUser");
+    const orgId = c.req.param("orgId");
+    const m = await opts.tenancy.getMembership(orgId, user.id);
+    if (!m) throw openaiError(403, "Not a member of this organization", "forbidden");
+    const members = await opts.tenancy.listMembers(orgId);
+    return c.json({ data: members });
+  });
+
+  secured.post("/organizations/:orgId/members", async (c) => {
+    const user = c.get("controlUser");
+    const orgId = c.req.param("orgId");
+    const m = await opts.tenancy.getMembership(orgId, user.id);
+    if (!m || !canInvite(m.role)) {
+      throw openaiError(403, "Admin role required to invite", "forbidden");
+    }
+    const body = z
+      .object({
+        email: z.string().email(),
+        role: z.enum(["owner", "admin", "member", "viewer"]).default("member"),
+      })
+      .parse(await c.req.json());
+
+    const invite = await opts.tenancy.createInvite({
+      organizationId: orgId,
+      email: body.email,
+      role: body.role as MembershipRole,
+      invitedByUserId: user.id,
+    });
+    await opts.tenancy.insertAudit({
+      organizationId: orgId,
+      actorUserId: user.id,
+      action: "invite.created",
+      resourceType: "invite",
+      resourceId: invite.id,
+      meta: { email: body.email, role: body.role },
+    });
+    opts.logger.info("invite_created", {
+      organization_id: orgId,
+      email: body.email,
+    });
+    return c.json(
+      {
+        id: invite.id,
+        email: invite.email,
+        role: invite.role,
+        token: invite.token,
+        note: "Email delivery is not configured; share out of band. User registers with this email to join.",
+      },
+      201,
+    );
+  });
+
+  secured.get("/workspaces/:id/audit", async (c) => {
+    const user = c.get("controlUser");
+    const workspaceId = c.req.param("id");
+    await requireAccess(opts, user.id, workspaceId, "admin");
+    const events = await opts.tenancy.listAudit({ workspaceId, limit: 100 });
+    return c.json({ data: events });
+  });
+
+  // Critical: nest under /control/v1 so session middleware never sees /v1 data plane
+  r.route("/control/v1", secured);
+  return r;
+}
+
+async function requireAccess(
+  opts: { tenancy: TenancyStore },
+  userId: string,
+  workspaceId: string,
+  minRole: MembershipRole,
+) {
+  const access = await opts.tenancy.getWorkspaceAccess(userId, workspaceId);
+  if (!access || !roleAtLeast(access.role, minRole)) {
+    throw openaiError(403, "Insufficient workspace access", "forbidden");
+  }
+  return access;
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createMemoryStores } from "./db/memory-store.js";
+import { createMemoryTenancyStore } from "./db/memory-tenancy.js";
 import { createLogger } from "./lib/logger.js";
 import { createMemoryRateLimiter } from "./lib/rate-limit.js";
 import { createMetrics, resetMetricsForTests } from "./observability/metrics.js";
@@ -17,6 +18,7 @@ function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
     STORE_DRIVER: "memory",
     FEATURE_METRICS: flags?.metrics === false ? "false" : "true",
     FEATURE_COMPLETION_LOGS: flags?.completionLogs === false ? "false" : "true",
+    FEATURE_CONTROL_PLANE: "false",
   } as unknown as NodeJS.ProcessEnv);
 
   const cfg = {
@@ -35,13 +37,16 @@ function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
     STORE_DRIVER: "memory" as const,
     AIHAY_DEV_KEY: "sk-aihay-dev-local",
     AIHAY_KEY_PEPPER: "test",
+    SESSION_SECRET: "test-session",
     SERVICE_NAME: "aihay-api-test",
     INSTANCE_ID: "test-instance",
     FEATURE_COMPLETION_LOGS: flags?.completionLogs !== false,
     FEATURE_METRICS: flags?.metrics !== false,
     FEATURE_OTEL: false,
+    FEATURE_CONTROL_PLANE: false,
   };
   const mem = createMemoryStores(cfg.AIHAY_KEY_PEPPER);
+  const tenancy = createMemoryTenancyStore(mem.keys);
   const metrics = cfg.FEATURE_METRICS ? createMetrics("aihay-api-test") : null;
   const app = createApp({
     config: cfg,
@@ -49,6 +54,7 @@ function testApp(flags?: { metrics?: boolean; completionLogs?: boolean }) {
     logger: createLogger("error"),
     keys: mem.keys,
     usage: mem.usage,
+    tenancy,
     rateLimiter: createMemoryRateLimiter(),
     metrics,
   });

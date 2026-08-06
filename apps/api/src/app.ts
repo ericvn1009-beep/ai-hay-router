@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import type { AppConfig } from "./config.js";
+import { controlRoutes } from "./control/routes.js";
 import type { KeyStore, UsageStore } from "./db/types.js";
+import type { TenancyStore } from "./db/tenancy-types.js";
 import type { Logger } from "./lib/logger.js";
 import type { RateLimiter } from "./lib/rate-limit.js";
 import type { Metrics } from "./observability/metrics.js";
@@ -19,9 +21,9 @@ export interface AppDeps {
   logger: Logger;
   keys: KeyStore;
   usage: UsageStore;
+  tenancy: TenancyStore;
   rateLimiter: RateLimiter;
   metrics: Metrics | null;
-  /** When true, /ready checks are soft (memory mode). */
   readyCheckDb?: () => Promise<boolean>;
 }
 
@@ -31,7 +33,6 @@ export function createApp(deps: AppDeps) {
   app.use("*", requestIdMiddleware);
   app.onError(createErrorHandler(deps.logger));
 
-  // Unauthenticated ops endpoints
   app.route(
     "/",
     healthRoutes({
@@ -39,6 +40,20 @@ export function createApp(deps: AppDeps) {
     }),
   );
   app.route("/", metricsRoutes(deps.metrics));
+
+  if (deps.config.FEATURE_CONTROL_PLANE) {
+    app.route(
+      "/",
+      controlRoutes({
+        config: deps.config,
+        keys: deps.keys,
+        usage: deps.usage,
+        tenancy: deps.tenancy,
+        logger: deps.logger,
+        sessionSecret: deps.config.SESSION_SECRET,
+      }),
+    );
+  }
 
   const api = new Hono();
   api.use(

@@ -12,7 +12,8 @@ One API key → **OpenAI + Anthropic (Claude) + xAI (Grok)**, streaming, model f
 | 1a–1d V1 gateway | Done |
 | **V2.0 Observability** | Done — `request_complete` logs + `GET /metrics` |
 | **V2.1 Tenancy** | Done — orgs/workspaces migrations + isolation |
-| Tag | `0.2.1` |
+| **V2.2 Control plane API** | Done — `/control/v1` auth, keys, usage, invites |
+| Tag | `0.3.0` |
 
 ## Quickstart (memory mode — no Docker DB)
 

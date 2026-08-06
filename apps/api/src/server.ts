@@ -27,6 +27,7 @@ const app = createApp({
   logger,
   keys: stores.keys,
   usage: stores.usage,
+  tenancy: stores.tenancy,
   rateLimiter: stores.rateLimiter,
   metrics,
   readyCheckDb: stores.ready,
@@ -42,6 +43,7 @@ logger.info("aihay_starting", {
   feature_completion_logs: config.FEATURE_COMPLETION_LOGS,
   feature_metrics: config.FEATURE_METRICS,
   feature_otel: config.FEATURE_OTEL,
+  feature_control_plane: config.FEATURE_CONTROL_PLANE,
   otel_enabled: otel.enabled,
 });
 

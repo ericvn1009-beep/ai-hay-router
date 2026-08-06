@@ -2,8 +2,11 @@ import { Redis } from "ioredis";
 import type { AppConfig } from "./config.js";
 import { resolveStoreDriver } from "./config.js";
 import { createMemoryStores } from "./db/memory-store.js";
+import { createMemoryTenancyStore } from "./db/memory-tenancy.js";
 import { createPgPool, createPgStores, migrate } from "./db/pg-store.js";
+import { createPgTenancyStore } from "./db/pg-tenancy.js";
 import type { KeyStore, UsageStore } from "./db/types.js";
+import type { TenancyStore } from "./db/tenancy-types.js";
 import type { Logger } from "./lib/logger.js";
 import {
   createMemoryRateLimiter,
@@ -15,6 +18,7 @@ import type pg from "pg";
 export interface RuntimeStores {
   keys: KeyStore;
   usage: UsageStore;
+  tenancy: TenancyStore;
   rateLimiter: RateLimiter;
   pool: pg.Pool | null;
   redis: Redis | null;
@@ -30,6 +34,7 @@ export async function bootstrapStores(
   const driver = resolveStoreDriver(config);
   let keys: KeyStore;
   let usage: UsageStore;
+  let tenancy: TenancyStore;
   let pool: pg.Pool | null = null;
 
   if (driver === "postgres") {
@@ -41,22 +46,24 @@ export async function bootstrapStores(
     const stores = createPgStores(pool, config.AIHAY_KEY_PEPPER);
     keys = stores.keys;
     usage = stores.usage;
-    const tenancy = await keys.ensureTenancyBootstrap();
+    tenancy = createPgTenancyStore(pool, keys);
+    const boot = await keys.ensureTenancyBootstrap();
     logger.info("store_postgres", {
       migrated: true,
       migrations_applied: applied,
-      default_workspace_id: tenancy.workspaceId,
-      default_organization_id: tenancy.organizationId,
+      default_workspace_id: boot.workspaceId,
+      default_organization_id: boot.organizationId,
     });
   } else {
     const mem = createMemoryStores(config.AIHAY_KEY_PEPPER);
     keys = mem.keys;
     usage = mem.usage;
-    const tenancy = await keys.ensureTenancyBootstrap();
+    tenancy = createMemoryTenancyStore(keys);
+    const boot = await keys.ensureTenancyBootstrap();
     logger.info("store_memory", {
       note: "set DATABASE_URL for postgres",
-      default_workspace_id: tenancy.workspaceId,
-      default_organization_id: tenancy.organizationId,
+      default_workspace_id: boot.workspaceId,
+      default_organization_id: boot.organizationId,
     });
   }
 
@@ -87,6 +94,7 @@ export async function bootstrapStores(
   return {
     keys,
     usage,
+    tenancy,
     rateLimiter,
     pool,
     redis,

@@ -240,8 +240,33 @@ curl -s http://localhost:3000/v1/models \
 | `GET` | `/health` | No | Liveness |
 | `GET` | `/ready` | No | Readiness (DB ping if Postgres) |
 | `GET` | `/metrics` | No | Prometheus text (V2.0; disable with `FEATURE_METRICS=false`) |
-| `GET` | `/v1/models` | Yes | Model list |
-| `POST` | `/v1/chat/completions` | Yes | Chat (stream / non-stream) |
+| `GET` | `/v1/models` | Bearer API key | Model list |
+| `POST` | `/v1/chat/completions` | Bearer API key | Chat (stream / non-stream) |
+| `*` | `/control/v1/*` | Session cookie (V2.2) | Control plane (when `FEATURE_CONTROL_PLANE=true`) |
+
+### Control plane (V2.2)
+
+Human session auth (HTTP-only cookie `aihay_session`). **API keys cannot call `/control/*`.**
+
+```bash
+# register (first user becomes owner of default org/workspace)
+curl -s -c cookies.txt -X POST localhost:3000/control/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"password123","name":"You"}'
+
+# create key
+WS=$(jq -r .workspace_id <<<"$(curl -s -b cookies.txt localhost:3000/control/v1/me | jq -r '.workspaces[0].id')")
+# or use workspace_id from register response:
+curl -s -b cookies.txt -X POST "localhost:3000/control/v1/workspaces/$WS/keys" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"app"}'
+# → save "secret" once
+
+# use key on data plane
+curl -s localhost:3000/v1/models -H "Authorization: Bearer sk-aihay-..."
+```
+
+Catalog: `GET /control/v1`. Disable control plane: `FEATURE_CONTROL_PLANE=false`.
 
 Useful response headers: `x-request-id`, `x-aihay-model`, `x-aihay-provider`.
 
