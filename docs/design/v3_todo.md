@@ -6,7 +6,7 @@
 | **Document type** | Forward backlog (V3) |
 | **Status** | Open — not scheduled |
 | **Baseline** | Shipped product **`v0.7.0`** (gateway + tenant control plane + thin dashboard) |
-| **Last updated** | 2026-08-06 (smart routing moved to lowest priority) |
+| **Last updated** | 2026-08-06 (ops: Compose Prometheus + Grafana) |
 | **Related** | [Runbook](../runbook.md) · [Architecture](./architecture-v2.md) · [README](../../README.md) |
 
 Work **not** in the current product surface. Order below is intentional priority for planning; nothing here is committed until an implementation plan is cut.
@@ -58,33 +58,52 @@ Work **not** in the current product surface. Order below is intentional priority
 
 ## Priority 2 — System monitoring & ops UI
 
-**Gap:** Ops today is raw `GET /metrics` + JSON logs + SQL. No in-product board for health of the gateway fleet.
+**Gap:** Ops today is raw `GET /metrics` + JSON logs + SQL. No first-class board for fleet health.
 
-### 2.1 Live ops board
+**Approach (decided):** use **Prometheus + Grafana in Docker Compose** as the primary ops path (not a full custom chart product inside admin UI). Optional thin admin “health” strip / deep-links later; tenant Usage stays separate.
 
-- [ ] Request rate, error rate (4xx/5xx), p50/p95 latency from Prometheus series  
-- [ ] Upstream provider health: attempts by `provider` × `result` (success / retriable / error / missing_credential)  
-- [ ] TTFT and token throughput sparklines  
-- [ ] Usage enqueue failure counter / metering health  
-- [ ] Instance list / readiness if multi-replica  
+### 2.1 Docker Compose — Prometheus + Grafana
 
-### 2.2 Telemetry plumbing (as needed)
+Add observability services (prefer a Compose **profile**, e.g. `observability`, so default gateway stays light):
 
-- [ ] Document Grafana starter dashboard (optional, file-based)  
-- [ ] Optional admin UI that scrapes or queries metrics (or embeds Grafana)  
-- [ ] Log search UX for `request_complete` by `request_id` / workspace (if log backend exists)  
-- [ ] Suggested alert rules shipped as code (runbook-aligned)  
+- [ ] **`prometheus` container** — scrape AI Hay `GET /metrics` (service discovery: `http://api:3000/metrics`)  
+- [ ] **`grafana` container** — provision Prometheus datasource; persist dashboards volume  
+- [ ] Config files in-repo (e.g. `deploy/prometheus/prometheus.yml`, `deploy/grafana/…`)  
+- [ ] Document ports (typical: Prometheus `:9090`, Grafana `:3002` or `:3000` only if not conflicting with API)  
+- [ ] Document start: `docker compose --profile observability up -d` (and combine with `full` when needed)  
+- [ ] Keep `FEATURE_METRICS=true` on API; do not expose Prometheus/Grafana on public tunnels by default  
+- [ ] Update runbook / README with scrape target, login (Grafana default admin), and “protect metrics at edge”  
 
-### 2.3 Provider / registry ops
+### 2.2 Grafana dashboards & alerts (on top of Compose)
+
+- [ ] Starter dashboard JSON: request rate, error rate (4xx/5xx), p50/p95 latency  
+- [ ] Upstream provider health: `aihay_upstream_attempts_total{provider,result}`  
+- [ ] TTFT (`aihay_ttft_ms`) and token throughput (`aihay_tokens_total`)  
+- [ ] Metering health: `aihay_usage_enqueue_failures_total`  
+- [ ] Suggested Grafana/Alertmanager alert rules (API down via blackbox or scrape fail; high 5xx; enqueue failures)  
+- [ ] Multi-replica note: scrape all API instances when scaled  
+
+### 2.3 Admin UI (thin — not a Grafana replacement)
+
+- [ ] Optional platform-admin **Health** page: `/ready` status + link “Open Grafana”  
+- [ ] Optional 3–5 summary KPIs only if needed for non-SRE admins  
+- [ ] Do **not** rebuild multi-range explorers / alert rule UIs in Next.js  
+
+### 2.4 Provider / registry ops (optional)
 
 - [ ] Model registry viewer (capability matrix: tools / vision / prices)  
 - [ ] Alias map viewer  
 - [ ] Optional hot-reload or admin edit of non-secret registry fields  
 
+### 2.5 Logs (later)
+
+- [ ] Log search UX for `request_complete` by `request_id` / workspace (if log backend exists)  
+
 **Acceptance (draft)**
 
-- [ ] Operator can answer “is the gateway healthy?” without shell access  
-- [ ] Operator can see which provider is failing without grepping logs  
+- [ ] `docker compose --profile observability up` brings up Prometheus scraping the API and Grafana with a working datasource  
+- [ ] Operator can answer “is the gateway healthy?” and “which provider is failing?” from Grafana without grepping logs  
+- [ ] Prometheus/Grafana are not required for gateway-only or tenant dashboard profiles 
 
 ---
 
@@ -161,8 +180,8 @@ Deferred product: learned or eval-linked routing. **Last** after admin, ops, and
 
 ## Suggested next planning step
 
-1. Turn **Priority 1 + 2** into `docs/design/architecture-v3-admin.md` (or expand this file) with API sketch:  
-   `GET/POST /admin/v1/...`  
-2. Then `implementation-plan-v3.md` with phases (e.g. **V3.0 Admin API**, **V3.1 Admin UI**, **V3.2 Ops board**, **V3.3 Tenant polish**, **V3.x Smart routing last**).  
+1. **Priority 2.1 first (cheap win):** Compose profile with Prometheus + Grafana + scrape config + starter dashboard.  
+2. Turn **Priority 1** into `docs/design/architecture-v3-admin.md` with API sketch: `GET/POST /admin/v1/...`  
+3. Then `implementation-plan-v3.md` with phases (e.g. **V3.0 Observability Compose**, **V3.1 Admin API/UI**, **V3.2 Tenant polish**, **V3.x Smart routing last**).  
 
-Until then, whole-system ops remains: **Prometheus `/metrics` + logs + SQL + runbook** (see [Runbook](../runbook.md)).
+Until then, whole-system ops remains: **raw `GET /metrics` + logs + SQL + runbook** (see [Runbook](../runbook.md)).
