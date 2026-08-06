@@ -604,9 +604,9 @@ docker compose down
 | In scope | Out of scope (for now) |
 | --- | --- |
 | Multi-provider chat gateway | Smart auto-routing (`aihay/auto` → V3) |
-| Control plane + dashboard | Full Stripe Checkout UI (webhook credit path exists) |
-| Budgets, BYOK, credits | Mid-stream model switch |
-| Tools/vision per capability matrix | Prompt storage by default |
+| Tenant control plane + thin dashboard | **Platform admin / whole-system ops UI** (→ [V3 TODO](./design/v3_todo.md)) |
+| Budgets, BYOK, credits | Full Stripe Checkout UI (webhook credit path exists) |
+| Tools/vision per capability matrix | Mid-stream model switch; prompt storage by default |
 | Stream-through SSE | 100+ providers |
 
 When behavior contradicts this runbook, prefer **running code**, then update this file.
