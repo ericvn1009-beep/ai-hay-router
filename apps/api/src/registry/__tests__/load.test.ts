@@ -6,9 +6,7 @@ describe("registry load", () => {
     const map = loadRegistryFromYaml();
     expect(map.size).toBeGreaterThanOrEqual(2);
     expect(map.get("openai/gpt-4o-mini")?.provider).toBe("openai");
-    expect(map.get("anthropic/claude-3-5-haiku-latest")?.upstream_id).toBe(
-      "claude-3-5-haiku-latest",
-    );
+    expect(map.get("anthropic/claude-haiku-4-5")?.upstream_id).toBe("claude-haiku-4-5");
   });
 
   it("parses endpoints", () => {

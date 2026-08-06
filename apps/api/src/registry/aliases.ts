@@ -4,7 +4,7 @@
  */
 export const DEFAULT_ALIASES: Record<string, string> = {
   "aihay/cheap": "openai/gpt-4o-mini",
-  "aihay/balanced": "anthropic/claude-3-5-haiku-latest",
+  "aihay/balanced": "anthropic/claude-haiku-4-5",
   "aihay/smart": "openai/gpt-4o",
   "aihay/fast": "xai/grok-3-mini",
 };

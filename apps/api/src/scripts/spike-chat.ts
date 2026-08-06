@@ -3,7 +3,7 @@
  *
  * Usage:
  *   pnpm spike:chat --provider openai --model gpt-4o-mini
- *   pnpm spike:chat --provider anthropic --model claude-3-5-haiku-latest
+ *   pnpm spike:chat --provider anthropic --model claude-haiku-4-5
  *   pnpm spike:chat --provider xai --model grok-4.5
  */
 import { createAnthropicAdapter } from "../providers/anthropic/index.js";
@@ -24,7 +24,7 @@ async function main() {
   const model = arg(
     "model",
     provider === "anthropic"
-      ? "claude-3-5-haiku-latest"
+      ? "claude-haiku-4-5"
       : provider === "xai" || provider === "grok"
         ? "grok-4.5"
         : "gpt-4o-mini",

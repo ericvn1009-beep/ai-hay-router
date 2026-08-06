@@ -261,7 +261,7 @@ Seed: `apps/api/models.yaml`.
 | AI Hay model id | Provider | Credential | tools | vision |
 | --- | --- | --- | --- | --- |
 | `openai/gpt-4o-mini`, `openai/gpt-4o` | OpenAI | `OPENAI_API_KEY` or BYOK | yes | yes |
-| `anthropic/claude-3-5-haiku-latest`, `anthropic/claude-sonnet-4-0` | Anthropic | `ANTHROPIC_API_KEY` or BYOK | yes | yes |
+| `anthropic/claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-opus-4-5` | Anthropic | `ANTHROPIC_API_KEY` or BYOK | yes | yes |
 | `xai/grok-4.5` | xAI | `XAI_API_KEY` or BYOK | yes | yes |
 | `xai/grok-3`, `xai/grok-3-mini` | xAI | `XAI_API_KEY` or BYOK | yes | no |
 
@@ -475,7 +475,7 @@ OPENAI_API_KEY=sk-... SMOKE_LIVE=1 \
 
 # Bypasses gateway — raw provider
 pnpm spike:chat --provider openai --model gpt-4o-mini
-pnpm spike:chat --provider anthropic --model claude-3-5-haiku-latest
+pnpm spike:chat --provider anthropic --model claude-haiku-4-5
 pnpm spike:chat --provider xai --model grok-4.5
 ```
 

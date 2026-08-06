@@ -88,11 +88,11 @@ pnpm keys create --name compose-dev
 | AI Hay id | Provider | tools | vision |
 | --- | --- | --- | --- |
 | `openai/gpt-4o-mini`, `openai/gpt-4o` | OpenAI | yes | yes |
-| `anthropic/claude-3-5-haiku-latest`, `anthropic/claude-sonnet-4-0` | Anthropic | yes | yes |
+| `anthropic/claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-opus-4-5` | Anthropic | yes | yes |
 | `xai/grok-4.5` | xAI | yes | yes |
 | `xai/grok-3`, `xai/grok-3-mini` | xAI | yes | no |
 | `aihay/cheap` → `openai/gpt-4o-mini` | alias | — | — |
-| `aihay/balanced` → `anthropic/claude-3-5-haiku-latest` | alias | — | — |
+| `aihay/balanced` → `anthropic/claude-haiku-4-5` | alias | — | — |
 | `aihay/smart` → `openai/gpt-4o` | alias | — | — |
 | `aihay/fast` → `xai/grok-3-mini` | alias | — | — |
 

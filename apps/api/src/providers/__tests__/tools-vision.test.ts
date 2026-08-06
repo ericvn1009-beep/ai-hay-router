@@ -116,7 +116,7 @@ describe("Anthropic tools/vision mapping", () => {
     const adapter = createAnthropicAdapter({ apiKey: "sk-ant" });
     const req = adapter.buildRequest(
       {
-        model: "anthropic/claude-sonnet-4-0",
+        model: "anthropic/claude-sonnet-4-5",
         messages: [{ role: "user", content: "hi" }],
         stream: false,
         max_tokens: 64,
@@ -127,7 +127,7 @@ describe("Anthropic tools/vision mapping", () => {
           },
         ],
       },
-      "claude-sonnet-4-0",
+      "claude-sonnet-4-5",
     );
     const body = JSON.parse(req.body as string) as { tools: Array<{ name: string }> };
     expect(body.tools[0]?.name).toBe("ping");

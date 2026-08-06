@@ -7,7 +7,7 @@ describe("anthropic adapter", () => {
   it("moves system messages and builds Messages API request", () => {
     const req = adapter.buildRequest(
       {
-        model: "anthropic/claude-3-5-haiku-latest",
+        model: "anthropic/claude-haiku-4-5",
         messages: [
           { role: "system", content: "Be brief." },
           { role: "user", content: "hi" },
@@ -15,7 +15,7 @@ describe("anthropic adapter", () => {
         stream: false,
         max_tokens: 32,
       },
-      "claude-3-5-haiku-latest",
+      "claude-haiku-4-5",
     );
     expect(req.url).toContain("/v1/messages");
     expect(req.headers["x-api-key"]).toBe("sk-ant-test");
@@ -23,7 +23,7 @@ describe("anthropic adapter", () => {
     const body = JSON.parse(req.body);
     expect(body.system).toBe("Be brief.");
     expect(body.messages).toEqual([{ role: "user", content: "hi" }]);
-    expect(body.model).toBe("claude-3-5-haiku-latest");
+    expect(body.model).toBe("claude-haiku-4-5");
     expect(body.max_tokens).toBe(32);
   });
 
@@ -31,19 +31,19 @@ describe("anthropic adapter", () => {
     const completion = adapter.parseResponse(
       {
         id: "msg_1",
-        model: "claude-3-5-haiku-latest",
+        model: "claude-haiku-4-5",
         content: [{ type: "text", text: "hello from claude" }],
         stop_reason: "end_turn",
         usage: { input_tokens: 5, output_tokens: 4 },
       },
       {
         requestId: "r1",
-        logicalModel: "anthropic/claude-3-5-haiku-latest",
-        upstreamModel: "claude-3-5-haiku-latest",
+        logicalModel: "anthropic/claude-haiku-4-5",
+        upstreamModel: "claude-haiku-4-5",
       },
     );
     expect(completion.object).toBe("chat.completion");
-    expect(completion.model).toBe("anthropic/claude-3-5-haiku-latest");
+    expect(completion.model).toBe("anthropic/claude-haiku-4-5");
     expect(completion.choices[0].message.content).toBe("hello from claude");
     expect(completion.choices[0].finish_reason).toBe("stop");
     expect(completion.usage?.prompt_tokens).toBe(5);
@@ -66,8 +66,8 @@ describe("anthropic adapter", () => {
     const chunks = [];
     for await (const c of adapter.parseStream(stream, {
       requestId: "r1",
-      logicalModel: "anthropic/claude-3-5-haiku-latest",
-      upstreamModel: "claude-3-5-haiku-latest",
+      logicalModel: "anthropic/claude-haiku-4-5",
+      upstreamModel: "claude-haiku-4-5",
     })) {
       chunks.push(c);
     }
