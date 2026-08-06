@@ -5,7 +5,7 @@
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V1) |
 | **Status** | Ready to build (synced with Product Spec + Architecture) |
-| **Last updated** | 2026-08-06 |
+| **Last updated** | 2026-08-06 (layout section expanded) |
 | **Based on** | [Product Spec](./product-spec.md) · [Architecture V1](./architecture-v1.md) |
 | **Goal** | Ship a self-hostable OpenAI-compatible multi-model gateway with CLI keys, metering, model fallbacks, and docs |
 | **First release tag** | `v0.1.0` |
@@ -109,60 +109,186 @@ An operator / developer can:
 
 ---
 
-## 4. Repo / project layout (create in Phase 0–1)
+## 4. Repo / project layout
+
+### 4.1 Mental model
+
+The repository is a **pnpm monorepo** with one shippable app today (`apps/api`) plus design/ops docs at the root. Runtime code lives under `apps/api`; research and product design live under `docs/`.
+
+```text
+Request path (rough):
+
+  server.ts → app.ts → middleware (auth) → routes/chat-completions
+      → pipeline/handle-chat → providers/* → upstream
+      → metering/usage (async)
+```
+
+| Layer | Responsibility |
+| --- | --- |
+| **Root** | Workspace tooling, Compose, env examples, smoke scripts, README |
+| **`apps/api`** | The gateway process: HTTP, routing, adapters, keys, usage |
+| **`docs/`** | Product/architecture/implementation + runbook (not imported by runtime) |
+
+There is **no** separate `packages/cli` package yet: CLI entrypoints are scripts under `apps/api/src/scripts/` exposed via `pnpm keys`, `pnpm smoke`, etc.
+
+### 4.2 Tree (as implemented)
 
 ```text
 ai-hay-router/
-  apps/api/
-    src/
-      server.ts
-      app.ts
-      config.ts
-      middleware/
-        request-id.ts
-        auth.ts
-        rate-limit.ts
-        error-handler.ts
-      routes/
-        chat-completions.ts
-        models.ts
-        health.ts
-      pipeline/
-        handle-chat.ts
-        attempt-plan.ts
-        execute-attempt.ts
-      registry/
-        types.ts
-        load.ts
-        resolve.ts
-      providers/
-        types.ts
-        openai/
-        anthropic/
-        stream/
-      metering/
-        usage.ts
-        cost.ts
-      db/
-        client.ts
-        schema.ts
-        keys.ts
-        usage.ts
-      lib/
-        hash.ts
-        logger.ts
-    models.yaml
-    Dockerfile
-  packages/cli/                 # or scripts/ under apps/api
-    src/keys.ts                 # keys create | list | revoke
-  docker-compose.yml
-  .env.example
-  package.json                  # pnpm workspace root
-  README.md                     # product + quickstart (expand)
-  docs/                         # existing research/design
+├── package.json                 # workspace root scripts (dev, test, keys, smoke…)
+├── pnpm-workspace.yaml          # packages: apps/*
+├── pnpm-lock.yaml
+├── .npmrc                       # pnpm install policy (Docker/CI friendly)
+├── .nvmrc                       # Node 22+
+├── .env.example                 # documented env vars (committed)
+├── .env                         # local secrets (gitignored)
+├── .dockerignore
+├── docker-compose.yml           # api + postgres + redis
+├── sample_test.sh               # curl smoke vs local/Compose API
+├── README.md
+│
+├── docs/
+│   ├── runbook.md               # operate / debug / incidents
+│   └── design/
+│       ├── product-spec.md
+│       ├── architecture-v1.md
+│       └── implementation-plan-v1.md   # this file
+│   └── … research notes (market, OpenRouter, COGS, etc.)
+│
+└── apps/api/                    # @aihay/api — the product binary
+    ├── package.json
+    ├── tsconfig.json
+    ├── vitest.config.ts
+    ├── Dockerfile               # multi-stage production image
+    ├── models.yaml              # model registry seed
+    └── src/
+        ├── server.ts            # process entry: boot, listen, shutdown
+        ├── bootstrap.ts         # stores (memory|postgres), redis limiter
+        ├── app.ts               # Hono app wiring
+        ├── config.ts            # env via Zod
+        ├── types/chat.ts        # OpenAI-shaped request/response types
+        │
+        ├── middleware/
+        │   ├── request-id.ts
+        │   ├── auth.ts          # Bearer dev key or hashed sk-aihay-…
+        │   └── error-handler.ts
+        │
+        ├── routes/
+        │   ├── health.ts        # /health, /ready
+        │   ├── models.ts        # GET /v1/models
+        │   ├── chat-completions.ts
+        │   └── schemas.ts       # Zod + V1 content policy (no tools/vision)
+        │
+        ├── pipeline/
+        │   ├── handle-chat.ts   # attempt loop, stream commit
+        │   ├── attempt-plan.ts  # model/endpoint order + fallbacks
+        │   └── execute-attempt.ts
+        │
+        ├── registry/
+        │   ├── types.ts
+        │   ├── load.ts          # parse models.yaml
+        │   └── resolve.ts
+        │
+        ├── providers/
+        │   ├── types.ts         # ChatAdapter interface
+        │   ├── stream/sse.ts
+        │   ├── openai/
+        │   ├── anthropic/
+        │   ├── xai/             # Grok (OpenAI-compatible)
+        │   └── ADAPTER_NOTES.md
+        │
+        ├── metering/
+        │   ├── cost.ts
+        │   └── usage.ts         # enqueue usage_events
+        │
+        ├── db/
+        │   ├── types.ts         # KeyStore / UsageStore interfaces
+        │   ├── schema.sql
+        │   ├── memory-store.ts  # local dev without Postgres
+        │   └── pg-store.ts      # durable keys + usage
+        │
+        ├── lib/
+        │   ├── hash.ts          # HMAC API keys
+        │   ├── rate-limit.ts    # memory or Redis RPM/daily
+        │   ├── logger.ts
+        │   └── errors.ts        # OpenAI-like AppError
+        │
+        └── scripts/
+            ├── spike-chat.ts    # Phase 0: direct provider call
+            ├── keys.ts          # keys create|list|revoke
+            ├── migrate.ts
+            └── smoke.ts
 ```
 
-Monorepo is optional; a single `apps/api` with `pnpm aihay-keys` script is acceptable if faster.
+Tests sit next to code as `**/__tests__/*.test.ts` and `app.integration.test.ts`.
+
+### 4.3 Directory guide
+
+| Path | What it is | When you touch it |
+| --- | --- | --- |
+| **`apps/api/src/server.ts`** | Process bootstrap | Port, graceful shutdown, boot logging |
+| **`bootstrap.ts`** | Choose memory vs Postgres; Redis vs in-process limits | New store drivers, migrate-on-boot |
+| **`app.ts`** | Mount middleware + routes | New public routes |
+| **`config.ts`** | Env schema defaults | New env vars |
+| **`middleware/`** | Cross-cutting HTTP | Auth, request ids, error JSON |
+| **`routes/`** | HTTP handlers + Zod | API contract, streaming SSE |
+| **`pipeline/`** | Routing / failover orchestration | Attempt plan, timeouts, stream commit rules |
+| **`providers/`** | Vendor adapters only | New lab (e.g. Gemini): add folder + registry rows |
+| **`registry/` + `models.yaml`** | Model id → provider, pricing, endpoints | Add/remove models, fallbacks, prices |
+| **`metering/`** | Cost estimate + usage enqueue | Billing-ready fields |
+| **`db/`** | Key + usage persistence | Schema, Postgres vs memory |
+| **`lib/`** | Shared pure helpers | Hash, rate limit, logger |
+| **`scripts/`** | Operator CLIs | keys, migrate, smoke, spike |
+| **`docker-compose.yml`** | Full stack | Ports, env interpolation from root `.env` |
+| **`docs/design/`** | Specs | Product/architecture/plan — not runtime |
+| **`docs/runbook.md`** | Ops procedures | Deploy, incidents, troubleshooting |
+| **`sample_test.sh`** | Manual curl smoke | Durable/dev key against running API |
+
+### 4.4 Workspace & scripts
+
+Root `package.json` forwards into `@aihay/api`:
+
+| Command | Effect |
+| --- | --- |
+| `pnpm dev` | `tsx watch src/server.ts` (hot reload) |
+| `pnpm build` / `pnpm start` | `tsc` → `node dist/server.js` |
+| `pnpm test` / `pnpm typecheck` | Vitest / `tsc --noEmit` |
+| `pnpm keys …` | Durable/memory key CLI |
+| `pnpm migrate` | Apply `schema.sql` (needs `DATABASE_URL`) |
+| `pnpm smoke` | HTTP smoke against running server |
+| `pnpm spike:chat` | Direct provider adapter test (no gateway) |
+
+Package name: **`@aihay/api`**. Workspace definition: `pnpm-workspace.yaml` → `apps/*`.
+
+### 4.5 Runtime artifacts (not source of truth)
+
+| Path | Notes |
+| --- | --- |
+| `node_modules/` | gitignored; `pnpm install` |
+| `apps/api/dist/` | Build output (`tsc` + copied `schema.sql` / `models.yaml`) |
+| `.env` | Local secrets; gitignored — Compose also reads it for `${VAR}` interpolation |
+
+### 4.6 Design rules for layout
+
+1. **Adapters stay thin** — vendor quirks only in `providers/*`; pipeline stays provider-agnostic.  
+2. **OpenAI wire types** live in `types/chat.ts`; adapters normalize to them.  
+3. **Stores behind interfaces** (`KeyStore`, `UsageStore`) so memory and Postgres share one app path.  
+4. **Docs are not imported** by the API — safe to edit without rebuilds.  
+5. **New providers** = new `providers/<id>/` + rows in `models.yaml` + `adapterFor` / `credentialFor` wiring + unit tests.  
+6. **Future packages** (official SDK, dashboard) can add `apps/web` or `packages/sdk` without moving the gateway.
+
+### 4.7 Request → file map
+
+| Concern | Primary files |
+| --- | --- |
+| Accept HTTP | `server.ts`, `app.ts`, `routes/*` |
+| Auth + RPM | `middleware/auth.ts`, `lib/hash.ts`, `lib/rate-limit.ts`, `db/*` |
+| Validate body | `routes/schemas.ts` |
+| Pick model/endpoint | `registry/*`, `pipeline/attempt-plan.ts` |
+| Call upstream | `pipeline/execute-attempt.ts`, `providers/*` |
+| Stream SSE | `routes/chat-completions.ts`, `providers/stream/sse.ts` |
+| Meter | `metering/*`, `db/*` |
+| Operator keys | `scripts/keys.ts` |
 
 ---
 
