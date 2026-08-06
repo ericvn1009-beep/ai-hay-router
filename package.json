@@ -13,6 +13,10 @@
     "start": "pnpm --filter @aihay/api start",
     "test": "pnpm --filter @aihay/api test",
     "typecheck": "pnpm --filter @aihay/api typecheck",
-    "spike:chat": "pnpm --filter @aihay/api spike:chat"
+    "spike:chat": "pnpm --filter @aihay/api spike:chat",
+    "aihay": "pnpm --filter @aihay/api keys",
+    "keys": "pnpm --filter @aihay/api keys",
+    "migrate": "pnpm --filter @aihay/api migrate",
+    "smoke": "pnpm --filter @aihay/api smoke"
   }
 }

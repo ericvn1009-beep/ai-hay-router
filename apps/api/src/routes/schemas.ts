@@ -4,7 +4,7 @@ import type { NormalizedChatRequest } from "../types/chat.js";
 
 const messageSchema = z.object({
   role: z.enum(["system", "user", "assistant", "tool", "function"]),
-  content: z.union([z.string(), z.null()]).optional(),
+  content: z.union([z.string(), z.null(), z.array(z.unknown())]).optional(),
   name: z.string().optional(),
   tool_calls: z.unknown().optional(),
   tool_call_id: z.string().optional(),
@@ -32,8 +32,6 @@ export const chatCompletionBodySchema = z
   })
   .passthrough();
 
-export type ChatBody = z.infer<typeof chatCompletionBodySchema>;
-
 export function validateAndNormalizeChat(
   body: unknown,
   defaultMaxTokens: number,
@@ -48,7 +46,6 @@ export function validateAndNormalizeChat(
   }
   const data = parsed.data;
 
-  // V1 content policy: reject tools / vision
   if (data.tools?.length || data.tool_choice || data.functions?.length || data.function_call) {
     throw openaiError(
       400,
@@ -59,6 +56,14 @@ export function validateAndNormalizeChat(
   }
 
   for (const m of data.messages) {
+    if (Array.isArray(m.content)) {
+      throw openaiError(
+        400,
+        "Vision / multimodal message content is not supported in V1. Use string content only.",
+        "unsupported_parameter",
+        "messages",
+      );
+    }
     if (m.content !== null && m.content !== undefined && typeof m.content !== "string") {
       throw openaiError(
         400,
@@ -81,11 +86,15 @@ export function validateAndNormalizeChat(
 
   return {
     model: data.model,
-    messages: data.messages.map((m) => ({
-      role: m.role,
-      content: m.content ?? null,
-      ...(m.name ? { name: m.name } : {}),
-    })),
+    messages: data.messages.map((m) => {
+      const content: string | null =
+        typeof m.content === "string" ? m.content : m.content == null ? null : null;
+      return {
+        role: m.role,
+        content,
+        ...(m.name ? { name: m.name } : {}),
+      };
+    }),
     stream: data.stream ?? false,
     temperature: data.temperature,
     max_tokens: maxTokens,

@@ -1,13 +1,22 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ModelRecord, RegistryFile } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Default path: apps/api/models.yaml relative to this module (src/registry). */
+/** Resolve models.yaml for src/ or dist/ layouts. */
 export function defaultRegistryPath(): string {
-  return join(__dirname, "../../models.yaml");
+  const candidates = [
+    join(__dirname, "../../models.yaml"), // src/registry or dist/registry → apps/api/models.yaml
+    join(__dirname, "../models.yaml"), // dist/models.yaml after build copy
+    join(process.cwd(), "models.yaml"),
+    join(process.cwd(), "apps/api/models.yaml"),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return candidates[0];
 }
 
 export function loadRegistryFromYaml(path = defaultRegistryPath()): Map<string, ModelRecord> {

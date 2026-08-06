@@ -1,0 +1,48 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      LOG_LEVEL: info
+      STORE_DRIVER: postgres
+      DATABASE_URL: postgres://aihay:aihay@postgres:5432/aihay
+      REDIS_URL: redis://redis:6379
+      AIHAY_KEY_PEPPER: ${AIHAY_KEY_PEPPER:-change-me-in-production}
+      AIHAY_DEV_KEY: ${AIHAY_DEV_KEY:-sk-aihay-dev-local}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEFAULT_MAX_TOKENS: "4096"
+      DEFAULT_RPM: "60"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aihay
+      POSTGRES_PASSWORD: aihay
+      POSTGRES_DB: aihay
+    ports:
+      - "5432:5432"
+    volumes:
+      - aihay_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aihay -d aihay"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  aihay_pg:
