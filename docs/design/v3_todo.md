@@ -6,7 +6,7 @@
 | **Document type** | Forward backlog (V3) |
 | **Status** | Open — not scheduled |
 | **Baseline** | Shipped product **`v0.7.0`** (gateway + tenant control plane + thin dashboard) |
-| **Last updated** | 2026-08-06 |
+| **Last updated** | 2026-08-06 (API Keys usage guide added) |
 | **Related** | [Runbook](../runbook.md) · [Architecture](./architecture-v2.md) · [README](../../README.md) |
 
 Work **not** in the current product surface. Order below is intentional priority for planning; nothing here is committed until an implementation plan is cut.
@@ -101,6 +101,25 @@ Deferred product: learned or eval-linked routing. Do **not** start until meterin
 ---
 
 ## Priority 4 — Product polish (after admin baseline)
+
+### 4.1 API Keys page — “How to use your API key” guide
+
+**Gap:** Dashboard `/keys` can create/revoke keys but does not explain how to call the gateway.
+
+- [ ] On **API Keys** page, add an in-UI usage guide (collapsible panel or callout after create + always visible “Quick start”)  
+- [ ] Show **base URL** for this deployment (e.g. `https://api.ericvn.dev/v1` or env-derived public URL)  
+- [ ] Document auth header: `Authorization: Bearer sk-aihay-…`  
+- [ ] Copy-paste **curl** example (`/v1/models`, `/v1/chat/completions`)  
+- [ ] Copy-paste **OpenAI SDK** snippet (`baseURL` + `apiKey`)  
+- [ ] Note: secret shown **once** at create; revoke if lost  
+- [ ] Optional: one-click copy for base URL / examples  
+- [ ] Optional: link to full runbook from the guide  
+
+**Acceptance (draft)**
+
+- [ ] New user can create a key and complete a first successful chat call using only the Keys page guide (no external docs required)  
+
+### 4.2 Other tenant UI polish
 
 - [ ] Tenant UI: budgets form, members/invites, audit page, workspace switcher  
 - [ ] Stripe Checkout (or equivalent) for self-serve credit top-up  
