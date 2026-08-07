@@ -555,7 +555,8 @@ Still open (do not block V2.0):
 | BYOK security notes | V2.5 |
 | Billing ops notes | V2.6 |
 | Capability matrix (tools/vision) | V2.7 |
-| [V3 TODO](./v3_todo.md) (admin UI, ops board, smart routing) | After V2 shipped (`v0.7.0`) |
+| [Implementation Plan V3](./implementation-plan-v3.md) | After V2 shipped (`v0.7.0`); excludes smart routing |
+| [V3 TODO](./v3_todo.md) | Backlog incl. smart routing (not in V3 plan DoD) |
 
 ---
 

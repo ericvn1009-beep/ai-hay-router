@@ -4,14 +4,14 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Forward backlog (V3) |
-| **Status** | Open — not scheduled |
+| **Status** | Open — **execution plan cut:** [implementation-plan-v3.md](./implementation-plan-v3.md) (excludes smart routing) |
 | **Baseline** | Shipped product **`v0.7.0`** (gateway + tenant control plane + thin dashboard) |
-| **Last updated** | 2026-08-06 (detailed token usage types) |
-| **Related** | [Runbook](../runbook.md) · [Architecture](./architecture-v2.md) · [README](../../README.md) |
+| **Last updated** | 2026-08-07 |
+| **Related** | [Implementation Plan V3](./implementation-plan-v3.md) · [Runbook](../runbook.md) · [Architecture](./architecture-v2.md) · [README](../../README.md) |
 
-Work **not** in the current product surface. Order below is intentional priority for planning; nothing here is committed until an implementation plan is cut.
+Work **beyond** shipped `v0.7.0`. Priorities **1–3** are scheduled in the V3 implementation plan. **Priority 4 (smart routing) is backlog-only** and is **not** part of that plan’s DoD.
 
-**Priority order (highest → lowest):** platform admin → ops monitor → product polish → **smart / auto routing last**.
+**Priority order (highest → lowest):** platform admin → ops monitor → product polish → **smart / auto routing last (excluded from impl plan V3)**.
 
 ---
 
@@ -208,10 +208,10 @@ Deferred product: learned or eval-linked routing. **Last** after admin, ops, and
 
 ---
 
-## Suggested next planning step
+## Planning status
 
-1. **Priority 2.1 first (cheap win):** Compose profile with Prometheus + Grafana + scrape config + starter dashboard.  
-2. Turn **Priority 1** into `docs/design/architecture-v3-admin.md` with API sketch: `GET/POST /admin/v1/...`  
-3. Then `implementation-plan-v3.md` with phases (e.g. **V3.0 Observability Compose**, **V3.1 Admin API/UI**, **V3.2 Tenant polish**, **V3.x Smart routing last**).  
+- **Execution plan:** [implementation-plan-v3.md](./implementation-plan-v3.md) — phases **V3.0–V3.5** covering Priorities **1–3** only.  
+- **Start here:** V3.0 Observability Compose (`docker compose --profile observability`).  
+- **Not scheduled:** Priority 4 smart / auto routing (keep checklist above for a future plan).  
 
-Until then, whole-system ops remains: **raw `GET /metrics` + logs + SQL + runbook** (see [Runbook](../runbook.md)).
+Until phases ship, whole-system ops remains: **raw `GET /metrics` + logs + SQL + runbook** (see [Runbook](../runbook.md)).

@@ -144,8 +144,9 @@ See [`.env.example`](./.env.example). Common ones:
 | [Product Spec](./docs/design/product-spec.md) | Product intent |
 | [Architecture](./docs/design/architecture-v2.md) | System design (current product surface) |
 | [Scalability](./docs/design/scalability.md) | Scale stages and capacity notes |
-| [Implementation Plan](./docs/design/implementation-plan-v2.md) | Shipped phase record |
-| [V3 TODO](./docs/design/v3_todo.md) | Backlog: platform admin UI, ops monitor, smart routing |
+| [Implementation Plan V2](./docs/design/implementation-plan-v2.md) | Shipped phase record (`v0.7.0`) |
+| [Implementation Plan V3](./docs/design/implementation-plan-v3.md) | Next program: admin, Grafana/Prometheus, tenant polish, token detail (**no** smart routing) |
+| [V3 TODO](./docs/design/v3_todo.md) | Backlog source (smart routing remains lowest, out of V3 plan DoD) |
 | [Runbook](./docs/runbook.md) | Operate and debug |
 
 Historical design notes: `architecture-v1.md`, `implementation-plan-v1.md` (archived planning).
