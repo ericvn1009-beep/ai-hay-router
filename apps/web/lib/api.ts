@@ -1,4 +1,4 @@
-/** Browser client — calls Next BFF which proxies to the control plane. */
+/** Browser client — BFF proxies to control plane and admin APIs. */
 
 export class ApiError extends Error {
   constructor(
@@ -10,11 +10,8 @@ export class ApiError extends Error {
   }
 }
 
-async function control<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
-  const res = await fetch(`/api/control${path}`, {
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -40,7 +37,20 @@ async function control<T>(
   return data as T;
 }
 
-export type User = { id: string; email: string; name: string | null };
+async function control<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(`/api/control${path}`, init);
+}
+
+async function adminApi<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(`/api/admin${path}`, init);
+}
+
+export type User = {
+  id: string;
+  email: string;
+  name: string | null;
+  platform_admin?: boolean;
+};
 export type Workspace = {
   id: string;
   name: string;
@@ -68,7 +78,26 @@ export const api = {
     control<{
       user: User;
       workspaces: Workspace[];
+      public_api_base_url?: string;
+      grafana_url?: string | null;
     }>("/me"),
+
+  listModels: () =>
+    control<{
+      data: Array<{
+        id: string;
+        provider: string;
+        virtual: boolean;
+        resolves_to: string | null;
+        supports_tools: boolean;
+        supports_vision: boolean;
+        supports_streaming: boolean;
+        context_length?: number;
+        input_price_per_mtok?: number;
+        output_price_per_mtok?: number;
+      }>;
+      aliases_enabled: boolean;
+    }>("/models"),
 
   listKeys: (workspaceId: string) =>
     control<{
@@ -108,6 +137,13 @@ export const api = {
         cost_usd_estimate: number;
         status: string;
         latency_ms: number;
+        token_breakdown?: {
+          input: number;
+          output: number;
+          cachedInput: number;
+          reasoning: number;
+          total: number;
+        } | null;
       }>;
     }>(`/workspaces/${workspaceId}/usage?limit=50`),
 
@@ -173,4 +209,72 @@ export const api = {
       `/workspaces/${workspaceId}/wallet/credit`,
       { method: "POST", body: JSON.stringify(body) },
     ),
+
+  getBudget: (workspaceId: string) =>
+    control<{
+      enabled: boolean;
+      policy: {
+        hard_cost_usd_daily: number | null;
+        soft_cost_usd_daily: number | null;
+        hard_tokens_daily: number | null;
+        soft_tokens_daily: number | null;
+      } | null;
+      usage: { costUsd: number; tokens: number; day: string } | null;
+    }>(`/workspaces/${workspaceId}/budget`),
+
+  putBudget: (
+    workspaceId: string,
+    body: {
+      hard_cost_usd_daily?: number | null;
+      soft_cost_usd_daily?: number | null;
+      hard_tokens_daily?: number | null;
+      soft_tokens_daily?: number | null;
+    },
+  ) =>
+    control<{ policy: Record<string, unknown> }>(
+      `/workspaces/${workspaceId}/budget`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+
+  adminHealth: () =>
+    adminApi<{
+      api: string;
+      database: string;
+      grafana_url: string | null;
+    }>("/health"),
+
+  adminWorkspaces: () =>
+    adminApi<{
+      data: Array<{
+        id: string;
+        name: string;
+        organization_id: string | null;
+        suspended_at: string | null;
+      }>;
+    }>("/workspaces"),
+
+  adminUsers: () =>
+    adminApi<{
+      data: Array<{
+        id: string;
+        email: string;
+        platform_admin: boolean;
+      }>;
+    }>("/users"),
+
+  adminSuspend: (workspaceId: string) =>
+    adminApi<{ ok: boolean }>(`/workspaces/${workspaceId}/suspend`, {
+      method: "POST",
+    }),
+
+  adminUnsuspend: (workspaceId: string) =>
+    adminApi<{ ok: boolean }>(`/workspaces/${workspaceId}/unsuspend`, {
+      method: "POST",
+    }),
+
+  adminUsage: () =>
+    adminApi<{ data: Array<Record<string, unknown>> }>("/usage?limit=100"),
+
+  adminAudit: () =>
+    adminApi<{ data: Array<Record<string, unknown>> }>("/audit"),
 };

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { adminRoutes } from "./admin/routes.js";
 import type { AppConfig } from "./config.js";
 import { controlRoutes } from "./control/routes.js";
 import type { BudgetStore } from "./db/budget-types.js";
@@ -60,6 +61,25 @@ export function createApp(deps: AppDeps) {
         wallets: deps.wallets,
         logger: deps.logger,
         sessionSecret: deps.config.SESSION_SECRET,
+        registry: deps.registry,
+      }),
+    );
+  }
+
+  if (deps.config.FEATURE_PLATFORM_ADMIN) {
+    app.route(
+      "/",
+      adminRoutes({
+        config: deps.config,
+        keys: deps.keys,
+        usage: deps.usage,
+        tenancy: deps.tenancy,
+        budgets: deps.budgets,
+        secrets: deps.secrets,
+        wallets: deps.wallets,
+        logger: deps.logger,
+        sessionSecret: deps.config.SESSION_SECRET,
+        readyCheckDb: deps.readyCheckDb,
       }),
     );
   }

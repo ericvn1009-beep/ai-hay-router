@@ -70,6 +70,14 @@ export function createMemoryStores(pepper: string): {
       return workspaces.get(workspaceId) ?? null;
     },
 
+    async setWorkspaceSuspended(workspaceId: string, suspended: boolean) {
+      const ws = workspaces.get(workspaceId);
+      if (!ws) return null;
+      const next = { ...ws, suspendedAt: suspended ? new Date() : null };
+      workspaces.set(workspaceId, next);
+      return next;
+    },
+
     async createKey(input: CreateKeyInput): Promise<CreateKeyResult> {
       seedDefault();
       const workspaceId = input.workspaceId ?? defaultWorkspaceId;

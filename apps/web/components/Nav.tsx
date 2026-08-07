@@ -4,7 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
-export function Nav({ email }: { email?: string }) {
+export function Nav({
+  email,
+  platformAdmin,
+}: {
+  email?: string;
+  platformAdmin?: boolean;
+}) {
   const path = usePathname();
   const router = useRouter();
 
@@ -26,8 +32,14 @@ export function Nav({ email }: { email?: string }) {
       <Link href="/keys" className={path === "/keys" ? "active" : ""}>
         Keys
       </Link>
+      <Link href="/models" className={path === "/models" ? "active" : ""}>
+        Models
+      </Link>
       <Link href="/usage" className={path === "/usage" ? "active" : ""}>
         Usage
+      </Link>
+      <Link href="/budget" className={path === "/budget" ? "active" : ""}>
+        Budget
       </Link>
       <Link href="/byok" className={path === "/byok" ? "active" : ""}>
         BYOK
@@ -35,6 +47,11 @@ export function Nav({ email }: { email?: string }) {
       <Link href="/wallet" className={path === "/wallet" ? "active" : ""}>
         Wallet
       </Link>
+      {platformAdmin && (
+        <Link href="/admin" className={path.startsWith("/admin") ? "active" : ""}>
+          Admin
+        </Link>
+      )}
       {email && <span className="muted mono">{email}</span>}
       <button type="button" className="secondary" onClick={() => void logout()}>
         Log out

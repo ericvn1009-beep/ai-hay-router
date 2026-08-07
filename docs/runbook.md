@@ -194,6 +194,12 @@ docker compose up --build -d
 
 # + dashboard on :3001
 docker compose --profile full up --build -d
+
+# + Prometheus (:9090) + Grafana (:3002)
+docker compose --profile observability up -d
+
+# full stack + observability
+docker compose --profile full --profile observability up -d
 ```
 
 | Service | Port |
@@ -202,6 +208,12 @@ docker compose --profile full up --build -d
 | web (profile `full`) | `3001` |
 | postgres | `5432` |
 | redis | `6379` |
+| prometheus (profile `observability`) | `9090` |
+| grafana (profile `observability`) | `3002` (admin/admin by default) |
+
+**Grafana:** open http://localhost:3002 — datasource Prometheus is provisioned; dashboard **AI Hay Gateway** loads from `deploy/grafana/dashboards/`. Do **not** expose Prometheus/Grafana on public tunnels.
+
+**Platform admin:** set `FEATURE_PLATFORM_ADMIN=true` and `PLATFORM_ADMIN_BOOTSTRAP_EMAIL=you@example.com`. First matching login becomes platform admin; open dashboard **Admin**.
 
 **Migrations:** applied automatically on API boot with Postgres. Manual:
 

@@ -25,6 +25,10 @@ services:
       CREDITS_BYOK_BYPASS: ${CREDITS_BYOK_BYPASS:-true}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       FEATURE_TOOLS_VISION: ${FEATURE_TOOLS_VISION:-false}
+      FEATURE_PLATFORM_ADMIN: ${FEATURE_PLATFORM_ADMIN:-true}
+      PLATFORM_ADMIN_BOOTSTRAP_EMAIL: ${PLATFORM_ADMIN_BOOTSTRAP_EMAIL:-}
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:3000/v1}
+      GRAFANA_URL: ${GRAFANA_URL:-http://localhost:3002}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       XAI_API_KEY: ${XAI_API_KEY:-}
@@ -71,5 +75,40 @@ services:
     ports:
       - "6379:6379"
 
+  # Observability — enable with: docker compose --profile observability up -d
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - aihay_prom:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    depends_on:
+      - api
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.3.1
+    ports:
+      - "3002:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - aihay_grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   aihay_pg:
+  aihay_prom:
+  aihay_grafana:

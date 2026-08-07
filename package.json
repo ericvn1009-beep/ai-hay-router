@@ -1,7 +1,7 @@
 {
   "name": "ai-hay-router",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "AI Hay Router — unified multi-model LLM API",
   "packageManager": "pnpm@11.20.0",
   "engines": {

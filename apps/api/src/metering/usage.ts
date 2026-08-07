@@ -22,6 +22,7 @@ export function buildUsageEvent(opts: {
   attemptCount: number;
   modelRecord?: ModelRecord;
   credentialMode?: "platform" | "byok" | null;
+  tokenBreakdown?: import("../db/types.js").TokenBreakdown | null;
 }): UsageEventInput {
   return {
     requestId: opts.requestId,
@@ -45,6 +46,7 @@ export function buildUsageEvent(opts: {
     errorCode: opts.errorCode,
     attemptCount: opts.attemptCount,
     credentialMode: opts.credentialMode ?? null,
+    tokenBreakdown: opts.tokenBreakdown ?? null,
   };
 }
 

@@ -59,6 +59,13 @@ export function createAuthMiddleware(env: AuthEnv) {
       throw openaiError(401, "API key revoked", "invalid_api_key");
     }
 
+    if (record.workspaceId !== "dev-workspace") {
+      const ws = await env.keyStore.getWorkspace(record.workspaceId);
+      if (ws?.suspendedAt) {
+        throw openaiError(403, "Workspace is suspended", "workspace_suspended");
+      }
+    }
+
     const rpm = record.rateLimitRpm ?? env.defaultRpm;
     const rl = await env.rateLimiter.checkRpm(record.id, rpm);
     if (!rl.allowed) {

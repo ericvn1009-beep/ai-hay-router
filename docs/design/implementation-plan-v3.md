@@ -4,7 +4,7 @@
 | --- | --- |
 | **Product** | AI Hay Router |
 | **Document type** | Implementation plan (V3 program) |
-| **Status** | Ready to execute — **not started** |
+| **Status** | **In progress / largely implemented** in tree (`v0.8.0` target) |
 | **Last updated** | 2026-08-07 |
 | **Baseline** | Shipped product **`v0.7.0`** ([Implementation Plan V2](./implementation-plan-v2.md) complete) |
 | **Source backlog** | [V3 TODO](./v3_todo.md) |

@@ -66,6 +66,9 @@ docker compose up --build -d
 # API + web dashboard + Postgres + Redis
 docker compose --profile full up --build -d
 # API :3000  ·  Web :3001  ·  Postgres :5432  ·  Redis :6379
+
+# + Prometheus :9090 + Grafana :3002 (AI Hay Gateway dashboard)
+docker compose --profile observability up -d
 ```
 
 Schema migrations run automatically on API boot when using Postgres. Manual apply:

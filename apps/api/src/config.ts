@@ -45,6 +45,13 @@ const envSchema = z.object({
   /** Shared secret for Stripe-style credit webhooks (optional) */
   STRIPE_WEBHOOK_SECRET: z.string().optional().default(""),
   FEATURE_TOOLS_VISION: boolish,
+  FEATURE_PLATFORM_ADMIN: boolish,
+  /** Comma-separated emails promoted to platform_admin on login/register */
+  PLATFORM_ADMIN_BOOTSTRAP_EMAIL: z.string().optional().default(""),
+  /** Public data-plane base for Keys UI examples, e.g. https://api.example.com/v1 */
+  PUBLIC_API_BASE_URL: z.string().optional().default(""),
+  /** Grafana deep link for admin Health page */
+  GRAFANA_URL: z.string().optional().default("http://localhost:3002"),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
@@ -58,6 +65,7 @@ export type AppConfig = z.infer<typeof envSchema> & {
   FEATURE_CREDITS: boolean;
   CREDITS_BYOK_BYPASS: boolean;
   FEATURE_TOOLS_VISION: boolean;
+  FEATURE_PLATFORM_ADMIN: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -74,7 +82,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     FEATURE_CREDITS: parsed.FEATURE_CREDITS ?? false,
     CREDITS_BYOK_BYPASS: parsed.CREDITS_BYOK_BYPASS ?? true,
     FEATURE_TOOLS_VISION: parsed.FEATURE_TOOLS_VISION ?? false,
+    FEATURE_PLATFORM_ADMIN: parsed.FEATURE_PLATFORM_ADMIN ?? true,
   };
+}
+
+export function platformAdminBootstrapEmails(config: AppConfig): string[] {
+  return config.PLATFORM_ADMIN_BOOTSTRAP_EMAIL.split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function resolveStoreDriver(config: AppConfig): "memory" | "postgres" {

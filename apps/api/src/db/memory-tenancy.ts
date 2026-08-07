@@ -10,11 +10,15 @@ import type {
 import type { KeyStore, Organization, User } from "./types.js";
 
 export function createMemoryTenancyStore(keys: KeyStore): TenancyStore {
-  const users = new Map<string, User & { passwordHash: string | null }>();
+  const users = new Map<
+    string,
+    User & { passwordHash: string | null; platformAdmin: boolean }
+  >();
   const memberships: MembershipRecord[] = [];
   const orgs = new Map<string, Organization>();
   const invites: InviteRecord[] = [];
   const audits: AuditEvent[] = [];
+  const suspended = new Map<string, Date | null>();
 
   return {
     async countUsers() {
@@ -26,11 +30,12 @@ export function createMemoryTenancyStore(keys: KeyStore): TenancyStore {
       if ([...users.values()].some((u) => u.email === email)) {
         throw new Error("email_taken");
       }
-      const user: User & { passwordHash: string | null } = {
+      const user: User & { passwordHash: string | null; platformAdmin: boolean } = {
         id: randomUUID(),
         email,
         name: input.name ?? null,
         passwordHash: input.passwordHash,
+        platformAdmin: input.platformAdmin ?? false,
         createdAt: new Date(),
       };
       users.set(user.id, user);
@@ -45,8 +50,47 @@ export function createMemoryTenancyStore(keys: KeyStore): TenancyStore {
     async findUserById(id) {
       const u = users.get(id);
       if (!u) return null;
-      const { passwordHash: _, ...rest } = u;
-      return rest;
+      return {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        createdAt: u.createdAt,
+        platformAdmin: u.platformAdmin,
+      };
+    },
+
+    async setPlatformAdmin(userId, platformAdmin) {
+      const u = users.get(userId);
+      if (u) u.platformAdmin = platformAdmin;
+    },
+
+    async listUsers(limit = 100) {
+      return [...users.values()]
+        .map((u) => ({
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          createdAt: u.createdAt,
+          platformAdmin: u.platformAdmin,
+        }))
+        .slice(0, limit);
+    },
+
+    async listOrganizations(limit = 100) {
+      return [...orgs.values()].slice(0, limit);
+    },
+
+    async setWorkspaceSuspended(workspaceId, suspendedFlag) {
+      if (keys.setWorkspaceSuspended) {
+        return keys.setWorkspaceSuspended(workspaceId, suspendedFlag);
+      }
+      const ws = await keys.getWorkspace(workspaceId);
+      if (!ws) return null;
+      suspended.set(workspaceId, suspendedFlag ? new Date() : null);
+      return {
+        ...ws,
+        suspendedAt: suspended.get(workspaceId) ?? null,
+      };
     },
 
     async addMembership(input) {
@@ -92,7 +136,10 @@ export function createMemoryTenancyStore(keys: KeyStore): TenancyStore {
       const m = await this.getMembership(ws.organizationId, userId);
       if (!m) return null;
       return {
-        workspace: ws,
+        workspace: {
+          ...ws,
+          suspendedAt: suspended.get(workspaceId) ?? null,
+        },
         organizationId: ws.organizationId,
         role: m.role,
       };
@@ -126,9 +173,7 @@ export function createMemoryTenancyStore(keys: KeyStore): TenancyStore {
 
     async findPendingInviteByEmail(email) {
       const e = email.toLowerCase();
-      return (
-        invites.find((i) => i.email === e && !i.acceptedAt) ?? null
-      );
+      return invites.find((i) => i.email === e && !i.acceptedAt) ?? null;
     },
 
     async acceptInvite(inviteId) {
@@ -147,6 +192,7 @@ export function createMemoryTenancyStore(keys: KeyStore): TenancyStore {
     async listAudit(opts) {
       return audits
         .filter((a) => {
+          if (opts?.global) return true;
           if (opts?.organizationId && a.organizationId !== opts.organizationId) return false;
           if (opts?.workspaceId && a.workspaceId !== opts.workspaceId) return false;
           return true;

@@ -8,6 +8,9 @@ import { Nav } from "./Nav";
 type Ctx = {
   user: User;
   workspace: Workspace;
+  publicApiBaseUrl: string;
+  platformAdmin: boolean;
+  grafanaUrl: string | null;
   setError: (e: string | null) => void;
 };
 
@@ -23,6 +26,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [publicApiBaseUrl, setPublicApiBaseUrl] = useState("http://localhost:3000/v1");
+  const [grafanaUrl, setGrafanaUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,6 +38,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         setUser(me.user);
         setWorkspaces(me.workspaces);
+        if (me.public_api_base_url) setPublicApiBaseUrl(me.public_api_base_url);
+        setGrafanaUrl(me.grafana_url ?? null);
       } catch {
         if (!cancelled) router.replace("/login");
       }
@@ -51,17 +58,27 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   const workspace = workspaces[0] ?? null;
+  const platformAdmin = Boolean(user.platform_admin);
 
   return (
     <div className="container">
-      <Nav email={user.email} />
+      <Nav email={user.email} platformAdmin={platformAdmin} />
       {error && <div className="error">{error}</div>}
       {!workspace ? (
         <div className="card">
           <p>No workspace found for this account.</p>
         </div>
       ) : (
-        <WorkspaceContext.Provider value={{ user, workspace, setError }}>
+        <WorkspaceContext.Provider
+          value={{
+            user,
+            workspace,
+            publicApiBaseUrl,
+            platformAdmin,
+            grafanaUrl,
+            setError,
+          }}
+        >
           {children}
         </WorkspaceContext.Provider>
       )}

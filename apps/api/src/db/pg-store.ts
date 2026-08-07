@@ -44,6 +44,7 @@ function mapWorkspace(row: pg.QueryResultRow): Workspace {
     name: row.name,
     slug: row.slug ?? null,
     createdAt: row.created_at,
+    suspendedAt: row.suspended_at ?? null,
   };
 }
 
@@ -135,6 +136,15 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
       return mapWorkspace(res.rows[0]);
     },
 
+    async setWorkspaceSuspended(workspaceId: string, suspended: boolean) {
+      const res = await pool.query(
+        `UPDATE workspaces SET suspended_at = $2 WHERE id = $1 RETURNING *`,
+        [workspaceId, suspended ? new Date() : null],
+      );
+      if (!res.rows[0]) return null;
+      return mapWorkspace(res.rows[0]);
+    },
+
     async createKey(input: CreateKeyInput): Promise<CreateKeyResult> {
       const workspaceId = input.workspaceId ?? (await this.ensureDefaultWorkspace());
       const ws = await this.getWorkspace(workspaceId);
@@ -219,9 +229,10 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
           id, request_id, api_key_id, workspace_id, organization_id,
           model_requested, model_used, provider, endpoint_id,
           prompt_tokens, completion_tokens, cost_usd_estimate, usage_estimated,
-          latency_ms, ttft_ms, status, error_code, attempt_count, credential_mode
+          latency_ms, ttft_ms, status, error_code, attempt_count, credential_mode,
+          token_breakdown
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
         )`,
         [
           randomUUID(),
@@ -243,6 +254,7 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
           event.errorCode,
           event.attemptCount,
           event.credentialMode ?? null,
+          event.tokenBreakdown ? JSON.stringify(event.tokenBreakdown) : null,
         ],
       );
     },
@@ -275,6 +287,7 @@ export function createPgStores(pool: pg.Pool, pepper: string): {
           errorCode: row.error_code,
           attemptCount: row.attempt_count,
           credentialMode: row.credential_mode ?? null,
+          tokenBreakdown: row.token_breakdown ?? null,
         }),
       );
     },

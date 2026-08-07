@@ -16,6 +16,9 @@ import {
   signSession,
 } from "../lib/session.js";
 import { createSessionAuthMiddleware } from "../middleware/session-auth.js";
+import { DEFAULT_ALIASES } from "../registry/aliases.js";
+import { listModels } from "../registry/resolve.js";
+import type { ModelRecord } from "../registry/types.js";
 import { loginUser, registerUser } from "./auth-service.js";
 
 const SESSION_DAYS = 14;
@@ -30,6 +33,7 @@ export function controlRoutes(opts: {
   wallets: WalletStore;
   logger: Logger;
   sessionSecret: string;
+  registry?: Map<string, ModelRecord>;
 }) {
   const r = new Hono();
 
@@ -107,7 +111,7 @@ export function controlRoutes(opts: {
       })
       .parse(await c.req.json());
 
-    const result = await registerUser(opts.tenancy, opts.keys, body);
+    const result = await registerUser(opts.tenancy, opts.keys, body, opts.config);
     const token = signSession(
       {
         userId: result.user.id,
@@ -131,7 +135,7 @@ export function controlRoutes(opts: {
         password: z.string().min(1),
       })
       .parse(await c.req.json());
-    const user = await loginUser(opts.tenancy, body);
+    const user = await loginUser(opts.tenancy, body, opts.config);
     const token = signSession(
       {
         userId: user.id,
@@ -161,6 +165,7 @@ export function controlRoutes(opts: {
 
   secured.get("/me", async (c) => {
     const user = c.get("controlUser");
+    const full = await opts.tenancy.findUserById(user.id);
     const memberships = await opts.tenancy.listMembershipsForUser(user.id);
     const workspaces = [];
     for (const m of memberships) {
@@ -175,7 +180,58 @@ export function controlRoutes(opts: {
         });
       }
     }
-    return c.json({ user, memberships, workspaces });
+    return c.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: full?.name ?? null,
+        platform_admin: full?.platformAdmin ?? false,
+      },
+      memberships,
+      workspaces,
+      public_api_base_url:
+        opts.config.PUBLIC_API_BASE_URL || "http://localhost:3000/v1",
+      grafana_url: opts.config.GRAFANA_URL || null,
+    });
+  });
+
+  // Session-auth model catalog (dashboard; no API key required)
+  secured.get("/models", async (c) => {
+    const registry = opts.registry;
+    if (!registry) {
+      return c.json({ data: [] });
+    }
+    const models = listModels(registry, {
+      aliasesEnabled: opts.config.FEATURE_ALIASES,
+      aliases: DEFAULT_ALIASES,
+    });
+    const data = models.map((m) => {
+      if ("virtual" in m && m.virtual) {
+        return {
+          id: m.id,
+          provider: "aihay",
+          virtual: true as const,
+          resolves_to: m.resolves_to,
+          supports_tools: false,
+          supports_vision: false,
+          supports_streaming: true,
+        };
+      }
+      const rec = m as ModelRecord;
+      return {
+        id: rec.id,
+        provider: rec.provider,
+        virtual: false as const,
+        resolves_to: null,
+        supports_tools: rec.supports_tools,
+        supports_vision: rec.supports_vision,
+        supports_streaming: rec.supports_streaming,
+        context_length: rec.context_length,
+        input_price_per_mtok: rec.input_price_per_mtok,
+        output_price_per_mtok: rec.output_price_per_mtok,
+      };
+    });
+    return c.json({ data, aliases_enabled: opts.config.FEATURE_ALIASES });
   });
 
   secured.get("/workspaces", async (c) => {
@@ -328,6 +384,7 @@ export function controlRoutes(opts: {
         model_used: e.modelUsed,
         provider: e.provider,
         prompt_tokens: e.promptTokens,
+        token_breakdown: e.tokenBreakdown ?? null,
         completion_tokens: e.completionTokens,
         cost_usd_estimate: e.costUsdEstimate,
         status: e.status,

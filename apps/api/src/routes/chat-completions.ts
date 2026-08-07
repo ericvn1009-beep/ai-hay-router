@@ -9,6 +9,7 @@ import { isByokProvider, type ByokProvider } from "../crypto/byok.js";
 import { AppError, openaiError } from "../lib/errors.js";
 import type { Logger } from "../lib/logger.js";
 import type { RateLimiter } from "../lib/rate-limit.js";
+import { parseTokenBreakdown } from "../metering/token-breakdown.js";
 import { buildUsageEvent, enqueueUsage } from "../metering/usage.js";
 import type { Metrics } from "../observability/metrics.js";
 import {
@@ -335,6 +336,10 @@ export function chatRoutes(opts: {
             void opts.rateLimiter.addDailyTokens(apiKey.id, totalTokens);
           }
           const latencyMs = Date.now() - result.startedAt;
+          const tokenBreakdown = parseTokenBreakdown(null, {
+            prompt: promptTokens,
+            completion: completionTokens,
+          });
           const usage = buildUsageEvent({
             requestId,
             apiKeyId: apiKey.id,
@@ -353,6 +358,7 @@ export function chatRoutes(opts: {
             attemptCount: result.attemptCount,
             modelRecord: usedModel,
             credentialMode: result.credentialMode,
+            tokenBreakdown,
           });
           enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
           trackBudget(usage.costUsdEstimate, promptTokens + completionTokens);
@@ -395,6 +401,10 @@ export function chatRoutes(opts: {
       const usedModel = opts.registry.get(result.modelUsed) ?? modelRecord;
 
       void opts.rateLimiter.addDailyTokens(apiKey.id, promptTokens + completionTokens);
+      const tokenBreakdown = parseTokenBreakdown(result.completion.usage, {
+        prompt: promptTokens,
+        completion: completionTokens,
+      });
       const usage = buildUsageEvent({
         requestId,
         apiKeyId: apiKey.id,
@@ -413,6 +423,7 @@ export function chatRoutes(opts: {
         attemptCount: result.attemptCount,
         modelRecord: usedModel,
         credentialMode: result.credentialMode,
+        tokenBreakdown,
       });
       enqueueUsage(opts.usage, usage, opts.logger, opts.metrics);
       trackBudget(usage.costUsdEstimate, promptTokens + completionTokens);

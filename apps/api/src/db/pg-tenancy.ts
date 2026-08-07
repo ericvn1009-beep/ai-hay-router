@@ -9,12 +9,15 @@ import type {
 } from "./tenancy-types.js";
 import type { KeyStore, MembershipRole, Organization, User } from "./types.js";
 
-function mapUser(row: pg.QueryResultRow): User & { passwordHash: string | null } {
+function mapUser(
+  row: pg.QueryResultRow,
+): User & { passwordHash: string | null; platformAdmin: boolean } {
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     passwordHash: row.password_hash ?? null,
+    platformAdmin: Boolean(row.platform_admin),
     createdAt: row.created_at,
   };
 }
@@ -39,10 +42,16 @@ export function createPgTenancyStore(pool: pg.Pool, keys: KeyStore): TenancyStor
     async createUser(input) {
       const id = randomUUID();
       const res = await pool.query(
-        `INSERT INTO users (id, email, name, password_hash)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO users (id, email, name, password_hash, platform_admin)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING *`,
-        [id, input.email.toLowerCase(), input.name ?? null, input.passwordHash],
+        [
+          id,
+          input.email.toLowerCase(),
+          input.name ?? null,
+          input.passwordHash,
+          input.platformAdmin ?? false,
+        ],
       );
       return mapUser(res.rows[0]);
     },
@@ -59,7 +68,55 @@ export function createPgTenancyStore(pool: pg.Pool, keys: KeyStore): TenancyStor
       const res = await pool.query(`SELECT * FROM users WHERE id = $1`, [id]);
       if (!res.rows[0]) return null;
       const u = mapUser(res.rows[0]);
-      return { id: u.id, email: u.email, name: u.name, createdAt: u.createdAt };
+      return {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        createdAt: u.createdAt,
+        platformAdmin: u.platformAdmin,
+      };
+    },
+
+    async setPlatformAdmin(userId, platformAdmin) {
+      await pool.query(`UPDATE users SET platform_admin = $2 WHERE id = $1`, [
+        userId,
+        platformAdmin,
+      ]);
+    },
+
+    async listUsers(limit = 100) {
+      const res = await pool.query(
+        `SELECT id, email, name, created_at, platform_admin FROM users
+         ORDER BY created_at DESC LIMIT $1`,
+        [limit],
+      );
+      return res.rows.map((row) => ({
+        id: row.id as string,
+        email: row.email as string,
+        name: (row.name as string | null) ?? null,
+        createdAt: row.created_at as Date,
+        platformAdmin: Boolean(row.platform_admin),
+      }));
+    },
+
+    async listOrganizations(limit = 100) {
+      const res = await pool.query(
+        `SELECT * FROM organizations ORDER BY created_at DESC LIMIT $1`,
+        [limit],
+      );
+      return res.rows.map((row) => ({
+        id: row.id as string,
+        name: row.name as string,
+        slug: row.slug as string,
+        createdAt: row.created_at as Date,
+      }));
+    },
+
+    async setWorkspaceSuspended(workspaceId, suspended) {
+      if (keys.setWorkspaceSuspended) {
+        return keys.setWorkspaceSuspended(workspaceId, suspended);
+      }
+      return null;
     },
 
     async addMembership(input) {
@@ -207,6 +264,13 @@ export function createPgTenancyStore(pool: pg.Pool, keys: KeyStore): TenancyStor
 
     async listAudit(opts): Promise<AuditEvent[]> {
       const limit = opts?.limit ?? 50;
+      if (opts?.global || (!opts?.workspaceId && !opts?.organizationId)) {
+        const res = await pool.query(
+          `SELECT * FROM audit_events ORDER BY created_at DESC LIMIT $1`,
+          [limit],
+        );
+        return res.rows.map(mapAudit);
+      }
       if (opts?.workspaceId) {
         const res = await pool.query(
           `SELECT * FROM audit_events WHERE workspace_id = $1

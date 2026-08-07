@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { AppConfig } from "../config.js";
+import { platformAdminBootstrapEmails } from "../config.js";
 import type { TenancyStore } from "../db/tenancy-types.js";
 import type { KeyStore, MembershipRole, User } from "../db/types.js";
 import { openaiError } from "../lib/errors.js";
@@ -8,6 +10,7 @@ export async function registerUser(
   tenancy: TenancyStore,
   keys: KeyStore,
   input: { email: string; password: string; name?: string },
+  config?: AppConfig,
 ): Promise<{ user: User; organizationId: string; workspaceId: string }> {
   const email = input.email.trim().toLowerCase();
   if (!email.includes("@") || input.password.length < 8) {
@@ -19,16 +22,21 @@ export async function registerUser(
 
   const passwordHash = await hashPassword(input.password);
   const countBefore = await tenancy.countUsers();
+  const bootstrap = config ? platformAdminBootstrapEmails(config) : [];
+  const asPlatformAdmin =
+    countBefore === 0 || (bootstrap.length > 0 && bootstrap.includes(email));
   const created = await tenancy.createUser({
     email,
     name: input.name ?? null,
     passwordHash,
+    platformAdmin: asPlatformAdmin,
   });
   const publicUser: User = {
     id: created.id,
     email: created.email,
     name: created.name,
     createdAt: created.createdAt,
+    platformAdmin: created.platformAdmin,
   };
 
   const pending = await tenancy.findPendingInviteByEmail(email);
@@ -115,8 +123,10 @@ export async function registerUser(
 export async function loginUser(
   tenancy: TenancyStore,
   input: { email: string; password: string },
+  config?: AppConfig,
 ): Promise<User> {
-  const row = await tenancy.findUserByEmail(input.email.trim().toLowerCase());
+  const email = input.email.trim().toLowerCase();
+  const row = await tenancy.findUserByEmail(email);
   if (!row?.passwordHash) {
     throw openaiError(401, "Invalid email or password", "invalid_credentials");
   }
@@ -124,10 +134,17 @@ export async function loginUser(
   if (!ok) {
     throw openaiError(401, "Invalid email or password", "invalid_credentials");
   }
+  let platformAdmin = row.platformAdmin;
+  const bootstrap = config ? platformAdminBootstrapEmails(config) : [];
+  if (!platformAdmin && bootstrap.includes(email)) {
+    await tenancy.setPlatformAdmin(row.id, true);
+    platformAdmin = true;
+  }
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     createdAt: row.createdAt,
+    platformAdmin,
   };
 }

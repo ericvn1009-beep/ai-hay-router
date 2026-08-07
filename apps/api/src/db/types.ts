@@ -13,6 +13,7 @@ export interface Workspace {
   name: string;
   slug: string | null;
   createdAt: Date;
+  suspendedAt?: Date | null;
 }
 
 export interface User {
@@ -20,6 +21,19 @@ export interface User {
   email: string;
   name: string | null;
   createdAt: Date;
+  platformAdmin?: boolean;
+}
+
+/** Normalized multi-type token usage (V3.4). */
+export interface TokenBreakdown {
+  input: number;
+  output: number;
+  cachedInput: number;
+  reasoning: number;
+  image: number;
+  audio: number;
+  tool: number;
+  total: number;
 }
 
 export interface ApiKeyRecord {
@@ -72,6 +86,7 @@ export interface UsageEventInput {
   attemptCount: number;
   /** platform | byok — set when known (V2.5+) */
   credentialMode?: "platform" | "byok" | null;
+  tokenBreakdown?: TokenBreakdown | null;
 }
 
 export interface KeyStore {
@@ -86,6 +101,11 @@ export interface KeyStore {
   }): Promise<Workspace>;
   listWorkspaces(organizationId?: string): Promise<Workspace[]>;
   getWorkspace(workspaceId: string): Promise<Workspace | null>;
+  /** Soft-suspend data plane for workspace keys (platform admin). */
+  setWorkspaceSuspended?(
+    workspaceId: string,
+    suspended: boolean,
+  ): Promise<Workspace | null>;
   createKey(input: CreateKeyInput): Promise<CreateKeyResult>;
   listKeys(opts?: { workspaceId?: string }): Promise<ApiKeyRecord[]>;
   revokeByPrefix(prefix: string, opts?: { workspaceId?: string }): Promise<boolean>;

@@ -1,4 +1,9 @@
-import type { MembershipRole, Organization, User, Workspace } from "./types.js";
+import type {
+  MembershipRole,
+  Organization,
+  User,
+  Workspace,
+} from "./types.js";
 
 export interface MembershipRecord {
   id: string;
@@ -46,9 +51,16 @@ export interface TenancyStore {
     email: string;
     name?: string | null;
     passwordHash: string;
-  }): Promise<User>;
-  findUserByEmail(email: string): Promise<(User & { passwordHash: string | null }) | null>;
-  findUserById(id: string): Promise<User | null>;
+    platformAdmin?: boolean;
+  }): Promise<User & { passwordHash: string | null; platformAdmin: boolean }>;
+  findUserByEmail(
+    email: string,
+  ): Promise<(User & { passwordHash: string | null; platformAdmin: boolean }) | null>;
+  findUserById(id: string): Promise<(User & { platformAdmin: boolean }) | null>;
+  setPlatformAdmin(userId: string, platformAdmin: boolean): Promise<void>;
+  listUsers(limit?: number): Promise<Array<User & { platformAdmin: boolean }>>;
+  listOrganizations(limit?: number): Promise<Organization[]>;
+  setWorkspaceSuspended(workspaceId: string, suspended: boolean): Promise<Workspace | null>;
   addMembership(input: {
     organizationId: string;
     userId: string;
@@ -68,5 +80,10 @@ export interface TenancyStore {
   findPendingInviteByEmail(email: string): Promise<InviteRecord | null>;
   acceptInvite(inviteId: string): Promise<void>;
   insertAudit(event: AuditEventInput): Promise<void>;
-  listAudit(opts?: { organizationId?: string; workspaceId?: string; limit?: number }): Promise<AuditEvent[]>;
+  listAudit(opts?: {
+    organizationId?: string;
+    workspaceId?: string;
+    limit?: number;
+    global?: boolean;
+  }): Promise<AuditEvent[]>;
 }
