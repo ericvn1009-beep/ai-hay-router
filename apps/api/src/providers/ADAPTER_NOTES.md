@@ -20,7 +20,7 @@
 - OpenAI-compatible Chat Completions at `https://api.x.ai/v1`.
 - Auth: `Authorization: Bearer $XAI_API_KEY` (same shape as OpenAI).
 - Adapter reuses OpenAI request/stream path with `id: "xai"`.
-- Canonical model ids: `xai/grok-4.5`, `xai/grok-3`, `xai/grok-3-mini` (upstream ids without prefix).
+- Canonical model ids: `xai/grok-4.5`, `xai/grok-4.3`, `xai/grok-4`, `xai/grok-3`, `xai/grok-3-mini` (upstream ids without prefix).
 - Confirm current model ids and pricing on https://docs.x.ai / console when deploying.
 
 ## V1 content policy

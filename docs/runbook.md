@@ -274,7 +274,7 @@ Seed: `apps/api/models.yaml`.
 | --- | --- | --- | --- | --- |
 | `openai/gpt-4o-mini`, `openai/gpt-4o` | OpenAI | `OPENAI_API_KEY` or BYOK | yes | yes |
 | `anthropic/claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-opus-4-5` | Anthropic | `ANTHROPIC_API_KEY` or BYOK | yes | yes |
-| `xai/grok-4.5` | xAI | `XAI_API_KEY` or BYOK | yes | yes |
+| `xai/grok-4.5`, `xai/grok-4.3`, `xai/grok-4` | xAI | `XAI_API_KEY` or BYOK | yes | yes |
 | `xai/grok-3`, `xai/grok-3-mini` | xAI | `XAI_API_KEY` or BYOK | yes | no |
 
 **Aliases** (`FEATURE_ALIASES=true`): `aihay/cheap`, `aihay/balanced`, `aihay/smart`, `aihay/fast`.

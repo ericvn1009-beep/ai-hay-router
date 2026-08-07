@@ -92,7 +92,7 @@ pnpm keys create --name compose-dev
 | --- | --- | --- | --- |
 | `openai/gpt-4o-mini`, `openai/gpt-4o` | OpenAI | yes | yes |
 | `anthropic/claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-opus-4-5` | Anthropic | yes | yes |
-| `xai/grok-4.5` | xAI | yes | yes |
+| `xai/grok-4.5`, `xai/grok-4.3`, `xai/grok-4` | xAI | yes | yes |
 | `xai/grok-3`, `xai/grok-3-mini` | xAI | yes | no |
 | `aihay/cheap` → `openai/gpt-4o-mini` | alias | — | — |
 | `aihay/balanced` → `anthropic/claude-haiku-4-5` | alias | — | — |
